@@ -44,7 +44,7 @@ func (kv *KVStore) needsCompaction(level int) bool {
 		}
 		totalFileSize += fileInfo.Size()
 	}
-	return totalFileSize >= segmentFileSizeThresholdLX
+	return totalFileSize >= kv.config.GetSegmentFileSizeThresholdLX()
 }
 
 func (kv *KVStore) getNextCompactionPlan() *CompactionPlan {
@@ -170,7 +170,7 @@ func (kv *KVStore) performMerge(compactionPlan *CompactionPlan) ([]SegmentMetada
 		} else {
 			// Check if offset is over the threshold and split the file further.
 			isTombstone := bytes.Equal(minRecord.Record.Value, lib.TOMBSTONE)
-			if currentNewSegmentOffset+int64(minRecord.Record.Size()) > kv.segmentFileSizeThresholdLX && !isTombstone {
+			if currentNewSegmentOffset+int64(minRecord.Record.Size()) > kv.config.GetSegmentFileSizeThresholdLX() && !isTombstone {
 				// Split the file further.
 				finalFilePath := kv.getSegmentFilePath(tempSegmentId)
 				segmentMetadataList = append(segmentMetadataList, SegmentMetadata{

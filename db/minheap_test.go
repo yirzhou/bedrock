@@ -2,7 +2,6 @@ package db
 
 import (
 	"container/heap"
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -20,7 +19,6 @@ func TestMinHeap(t *testing.T) {
 	heap.Init(&pq)
 
 	for _, record := range records {
-		fmt.Println(record)
 		heap.Push(&pq, &record)
 	}
 

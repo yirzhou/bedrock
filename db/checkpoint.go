@@ -12,6 +12,34 @@ import (
 	"wal/lib"
 )
 
+// RollToNewSegment rolls to a new segment.
+// It creates a new WAL file and updates the WAL object.
+// It also updates the current segment ID and the last sequence number.
+func (kv *KVStore) RollToNewSegment() error {
+	segmentID := kv.GetCurrentSegmentIDUnsafe() + 1
+	walFileName := getWalFileNameFromSegmentID(segmentID)
+	walFilePath := filepath.Join(kv.config.GetBaseDir(), logsDir, walFileName)
+	walFile, err := os.OpenFile(walFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Println("Error opening WAL file:", err)
+		return err
+	}
+	// Close the current file
+	err = kv.wal.activeFile.Close()
+	if err != nil {
+		log.Println("Error closing current WAL file:", err)
+		return err
+	}
+	kv.wal.activeFile = walFile
+	// kv.wal.activeSegmentID = segmentID
+	kv.wal.lastSequenceNum = 0
+
+	// Update the active segment ID.
+	kv.activeSegmentID = segmentID
+
+	return nil
+}
+
 // doCheckpoint is the main function that performs a checkpoint.
 // It creates a new segment file, converts the memtable to an SSTable,
 // and writes the SSTable to the segment file.
@@ -20,7 +48,7 @@ import (
 // TODO: checkpointing on normal shutdown.
 func (kv *KVStore) doCheckpoint() error {
 	// Create the checkpoint directory if it doesn't exist.
-	checkpointDir := filepath.Join(kv.dir, checkpointDir)
+	checkpointDir := filepath.Join(kv.config.GetBaseDir(), checkpointDir)
 	err := os.MkdirAll(checkpointDir, 0755)
 	if err != nil {
 		log.Println("Error creating checkpoint directory:", err)
@@ -126,7 +154,7 @@ func (kv *KVStore) cleanUpWALFiles(lastSegmentID uint64) error {
 func (kv *KVStore) updateCheckpointFile(manifestFilePath string) error {
 	// Get the current unix timestamp as a string.
 	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
-	tempCheckpointFilePath := filepath.Join(kv.dir, checkpointDir, fmt.Sprintf("%s.%s", currentFile, timestamp))
+	tempCheckpointFilePath := filepath.Join(kv.config.GetBaseDir(), checkpointDir, fmt.Sprintf("%s.%s", currentFile, timestamp))
 	tempCheckpointFile, err := os.OpenFile(tempCheckpointFilePath, os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		log.Println("Error opening temp checkpoint file:", err)
@@ -149,7 +177,7 @@ func (kv *KVStore) updateCheckpointFile(manifestFilePath string) error {
 	tempCheckpointFile.Sync()
 
 	// Rename the temp checkpoint file to the actual checkpoint file.
-	err = os.Rename(tempCheckpointFilePath, filepath.Join(kv.dir, checkpointDir, currentFile))
+	err = os.Rename(tempCheckpointFilePath, filepath.Join(kv.config.GetBaseDir(), checkpointDir, currentFile))
 	if err != nil {
 		log.Println("Error renaming temp checkpoint file:", err)
 		return err
