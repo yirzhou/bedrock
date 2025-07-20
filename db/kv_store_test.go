@@ -51,8 +51,8 @@ func TestPutGet(t *testing.T) {
 
 	// Confirm the key-value pairs are stored.
 	for key, val := range keyVal {
-		value, err := kv.Get([]byte(key))
-		assert.NoError(t, err)
+		value, found := kv.Get([]byte(key))
+		assert.True(t, found)
 		assert.Equal(t, []byte(val), value)
 	}
 }
@@ -86,8 +86,8 @@ func TestRecoveryNormal(t *testing.T) {
 
 	// Check if the key-value pairs are recovered.
 	for i := range 100 {
-		value, err := kv.Get([]byte(fmt.Sprintf("key-%d", i)))
-		assert.NoError(t, err)
+		value, found := kv.Get([]byte(fmt.Sprintf("key-%d", i)))
+		assert.True(t, found)
 		assert.Equal(t, []byte(fmt.Sprintf("value-%d", i)), value)
 	}
 }
@@ -128,13 +128,13 @@ func TestRecoveryWithCorruptedWALFile(t *testing.T) {
 
 	// Check if the key-value pairs are recovered.
 	for i := range 99 {
-		value, err := kv.Get([]byte(fmt.Sprintf("key-%d", i)))
-		assert.NoError(t, err)
+		value, found := kv.Get([]byte(fmt.Sprintf("key-%d", i)))
+		assert.True(t, found)
 		assert.Equal(t, []byte(fmt.Sprintf("value-%d", i)), value)
 	}
-	// Check if the key-value pair for "key-99" is lost.
-	value, err := kv.Get([]byte("key-99"))
-	assert.NoError(t, err)
+	// Confirm the key-value pair for "key-99" is not found.
+	value, found := kv.Get([]byte("key-99"))
+	assert.False(t, found)
 	assert.Nil(t, value)
 }
 
@@ -163,8 +163,8 @@ func TestRecoveryWithCorruptedSparseIndexFile(t *testing.T) {
 
 	// Check if the key-value pairs are recovered.
 	for i := range 100 {
-		value, err := kv.Get([]byte(fmt.Sprintf("key-%d", i)))
-		assert.NoError(t, err)
+		value, found := kv.Get([]byte(fmt.Sprintf("key-%d", i)))
+		assert.True(t, found)
 		assert.Equal(t, []byte(fmt.Sprintf("value-%d", i)), value)
 	}
 }
@@ -197,8 +197,8 @@ func TestRecoveryWithCorruptedCheckpoint(t *testing.T) {
 
 	// Check if the key-value pairs are stored.
 	for i := range 100 {
-		value, err := kv.Get([]byte(fmt.Sprintf("key-%d", i)))
-		assert.NoError(t, err)
+		value, found := kv.Get([]byte(fmt.Sprintf("key-%d", i)))
+		assert.True(t, found)
 		assert.Equal(t, []byte(fmt.Sprintf("value-%d", i)), value)
 	}
 }
@@ -223,8 +223,8 @@ func TestRecoveryNormalWithVariousCheckpointSizes(t *testing.T) {
 
 		// Check if the key-value pairs are recovered.
 		for i := range 100 {
-			value, err := kv.Get([]byte(fmt.Sprintf("key-%d", i)))
-			assert.NoError(t, err)
+			value, found := kv.Get([]byte(fmt.Sprintf("key-%d", i)))
+			assert.True(t, found)
 			assert.Equal(t, []byte(fmt.Sprintf("value-%d", i)), value, "checkpointSize: %d, key: %s, value: %s", checkpointSize, fmt.Sprintf("key-%d", i), fmt.Sprintf("value-%d", i))
 		}
 		checkpointSize *= 2
@@ -243,13 +243,14 @@ func TestDelete(t *testing.T) {
 
 	// Delete 100 key-value pairs.
 	for i := range 100 {
-		kv.Delete([]byte(fmt.Sprintf("key-%d", i)))
+		err := kv.Delete([]byte(fmt.Sprintf("key-%d", i)))
+		assert.NoError(t, err)
 	}
 
 	// Check if the key-value pairs are deleted.
 	for i := range 100 {
-		value, err := kv.Get([]byte(fmt.Sprintf("key-%d", i)))
-		assert.NoError(t, err)
+		value, found := kv.Get([]byte(fmt.Sprintf("key-%d", i)))
+		assert.False(t, found)
 		assert.Nil(t, value)
 	}
 
@@ -260,8 +261,8 @@ func TestDelete(t *testing.T) {
 
 	// Check if the key-value pairs are recovered.
 	for i := range 100 {
-		value, err := kv.Get([]byte(fmt.Sprintf("key-%d", i)))
-		assert.NoError(t, err)
+		value, found := kv.Get([]byte(fmt.Sprintf("key-%d", i)))
+		assert.True(t, found)
 		assert.Equal(t, []byte(fmt.Sprintf("value-%d", i)), value)
 	}
 }

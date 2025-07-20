@@ -198,8 +198,8 @@ func TestPerformMerge(t *testing.T) {
 	}
 
 	for k, v := range kvMap {
-		value, err := kv.Get([]byte(k))
-		assert.NoError(t, err)
+		value, found := kv.Get([]byte(k))
+		assert.True(t, found)
 		assert.Equal(t, v, value)
 	}
 }
@@ -243,8 +243,11 @@ func TestDoCompaction(t *testing.T) {
 
 	// Check that the records are still there
 	for i := range keyCount {
-		value, err := kv.Get([]byte(fmt.Sprintf("key%d", i)))
-		assert.NoError(t, err)
-		assert.Equal(t, kvMap[fmt.Sprintf("key%d", i)], value)
+		value, found := kv.Get([]byte(fmt.Sprintf("key%d", i)))
+		localValue, localFound := kvMap[fmt.Sprintf("key%d", i)]
+		assert.Equal(t, localFound, found)
+		if localFound {
+			assert.Equal(t, localValue, value)
+		}
 	}
 }

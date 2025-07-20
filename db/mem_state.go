@@ -3,7 +3,6 @@ package db
 import (
 	"bytes"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -108,13 +107,13 @@ func (m *MemState) FindKeyInSparseIndex(segmentID uint64, key []byte) int64 {
 
 // Get returns the value for a given key.
 // If the key is not found, it returns an error.
-func (m *MemState) Get(key []byte) ([]byte, error) {
+func (m *MemState) Get(key []byte) ([]byte, bool) {
 	// Found in MemState.
 	value, ok := m.state[string(key)]
 	if !ok {
-		return nil, errors.New("key not found in memtable")
+		return nil, false
 	}
-	return value, nil
+	return value, true
 }
 
 func (m *MemState) Put(key, value []byte) error {

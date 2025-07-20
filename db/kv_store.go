@@ -52,6 +52,9 @@ type KVStore struct {
 
 	// The configuration for the KVStore.
 	config *Configuration
+
+	// Lock manager for transactions.
+	lockManager *LockManager
 }
 
 // compactionLoop is the main loop for the compaction process.
@@ -140,6 +143,7 @@ func Open(config *Configuration) (*KVStore, error) {
 		levels:          levels,
 		shutdownChan:    make(chan struct{}),
 		config:          config,
+		lockManager:     NewLockManager(),
 	}
 	// Start the compaction loop.
 	if config.GetCompactionIntervalMs() > 0 {
@@ -216,15 +220,19 @@ func binSearchSegmentMetadata(level []SegmentMetadata, key []byte) int {
 }
 
 // getInternalV2 is the internal implementation of Get using leveled compaction.
-func (kv *KVStore) getInternalV2(key []byte) ([]byte, error) {
+func (kv *KVStore) getInternalV2(key []byte) ([]byte, bool) {
 	// Find the key in L0 first.
 	value, err := kv.findKeyInL0(key)
 	if err != nil {
 		log.Println("getInternal: Error finding key in L0:", err)
-		return nil, err
+		return nil, false
 	}
 	if value != nil {
-		return value, nil
+		// Handle tombstone.
+		if bytes.Equal(value, lib.TOMBSTONE) {
+			return nil, false
+		}
+		return value, true
 	}
 
 	// Find from L1 onwards.
@@ -248,24 +256,27 @@ func (kv *KVStore) getInternalV2(key []byte) ([]byte, error) {
 		value, err := kv.searchInSegmentFile(segmentFilePath, offset, key)
 		if err != nil {
 			log.Println("getInternal: Error searching in segment file:", err)
-			return nil, err
+			return nil, false
 		}
 		if value != nil {
 			log.Println("getInternal: Found key in segment file:", string(key))
-			return value, nil
+			if bytes.Equal(value, lib.TOMBSTONE) {
+				return nil, false
+			}
+			return value, true
 		}
 	}
-	return nil, nil
+	return nil, false
 }
 
 // Deprecated: Use getInternalV2 instead.
 // getInternal is the internal implementation of Get using the old way of going through all sparse indexes from newest to oldest (without leveled compaction).
-func (kv *KVStore) getInternal(key []byte) ([]byte, error) {
+func (kv *KVStore) getInternal(key []byte) ([]byte, bool) {
 	// Search in the segment files.
 	segmentIDs, err := kv.memState.GetAllSegmentIDsDescendingOrder()
 	if err != nil {
 		log.Println("Get: Error getting all segment files:", err)
-		return nil, err
+		return nil, false
 	}
 	log.Println("Get: Searching in segment files:", segmentIDs)
 	var value []byte = nil
@@ -280,44 +291,41 @@ func (kv *KVStore) getInternal(key []byte) ([]byte, error) {
 		if err != nil {
 			// Technically we shouldn't get an error here.
 			log.Printf("Get: Error searching in segment file: %v\n", err)
-			return nil, err
+			return nil, false
 		}
 		// This is the value we are looking for since we are searching in the segment files in descending order.
 		if value != nil {
 			log.Println("Get: Found key in segment file:", string(key))
-			break
+			if !bytes.Equal(value, lib.TOMBSTONE) {
+				return value, true
+			}
 		}
 	}
-	return value, nil
+	return nil, false
 }
 
 // Get returns the value for a given key. The value is nil if the key is not found.
-func (kv *KVStore) Get(key []byte) ([]byte, error) {
+func (kv *KVStore) Get(key []byte) ([]byte, bool) {
 	kv.lock.RLock()
 	defer kv.lock.RUnlock()
-	value, err := kv.memState.Get(key)
-	if err == nil {
+	value, found := kv.memState.Get(key)
+	if found {
 		// Directly return the value from the memtable.
 		log.Printf("Get: Found key [%s] in memtable with value [%s]\n", string(key), string(value))
 	} else {
 		// Search in L0 first.
-		value, err = kv.getInternalV2(key)
-		if err != nil {
-			log.Printf("Get: Error searching for key %s: %v\n", string(key), err)
-			return nil, err
+		value, found = kv.getInternalV2(key)
+		if !found {
+			return nil, false
 		}
 	}
-	// At this point, the value is nil if the key is not found in the segment files.
-	if value == nil {
-		log.Println("Get: Key not found in segment files:", string(key))
-	} else {
-		// If the value is a tombstone, it means the key is deleted.
-		if bytes.Equal(value, lib.TOMBSTONE) {
-			log.Println("Get: Key is a tombstone:", string(key))
-			value = nil
-		}
+	// If the value is a tombstone, it means the key is deleted.
+	if bytes.Equal(value, lib.TOMBSTONE) {
+		log.Println("Get: Key is deleted:", string(key))
+		value = nil
+		found = false
 	}
-	return value, nil
+	return value, found
 }
 
 // Put writes a key-value pair to the KVStore.
