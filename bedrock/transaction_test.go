@@ -17,7 +17,7 @@ func TestSuccessfulCommit(t *testing.T) {
 	}
 	defer kv.CloseAndCleanUp()
 
-	txn := kv.NewTransaction()
+	txn := kv.BeginTransaction()
 	for i := range 100 {
 		txn.Put([]byte(fmt.Sprintf("key%d", i)), []byte(fmt.Sprintf("value%d", i)))
 	}
@@ -36,7 +36,7 @@ func TestSuccessfulRollback(t *testing.T) {
 		t.Fatalf("Error creating KVStore: %v", err)
 	}
 	defer kv.CloseAndCleanUp()
-	txn := kv.NewTransaction()
+	txn := kv.BeginTransaction()
 	txn.Put([]byte("key1"), []byte("value1"))
 	txn.Rollback()
 	_, ok := kv.Get([]byte("key1"))
@@ -44,7 +44,7 @@ func TestSuccessfulRollback(t *testing.T) {
 
 	// Open a new transaction and read the key.
 	// The key should not be found.
-	txn = kv.NewTransaction()
+	txn = kv.BeginTransaction()
 	_, ok = txn.Get([]byte("key1"))
 	assert.False(t, ok)
 	txn.Rollback()
@@ -58,7 +58,7 @@ func TestGetAfterPut(t *testing.T) {
 	}
 	defer kv.CloseAndCleanUp()
 
-	txn := kv.NewTransaction()
+	txn := kv.BeginTransaction()
 	txn.Put([]byte("key1"), []byte("value1"))
 	value, ok := txn.Get([]byte("key1"))
 	assert.True(t, ok)
@@ -79,7 +79,7 @@ func TestIsolationTwoGoroutines(t *testing.T) {
 
 	go func() {
 		defer wg.Done()
-		txn := kv.NewTransaction()
+		txn := kv.BeginTransaction()
 		txn.Get([]byte("key1"))
 		// Sleep for 100 ms
 		time.Sleep(100 * time.Millisecond)
@@ -90,7 +90,7 @@ func TestIsolationTwoGoroutines(t *testing.T) {
 		defer wg.Done()
 		// Sleep for 20 ms
 		time.Sleep(20 * time.Millisecond)
-		txn := kv.NewTransaction()
+		txn := kv.BeginTransaction()
 		txn.Put([]byte("key1"), []byte("new_value"))
 		txn.Commit()
 	}()
@@ -114,7 +114,7 @@ func TestWriteWriteConflict(t *testing.T) {
 
 	go func() {
 		defer wg.Done()
-		txn := kv.NewTransaction()
+		txn := kv.BeginTransaction()
 		txn.Put([]byte("key1"), []byte("value1"))
 		// Sleep for 100 ms
 		time.Sleep(100 * time.Millisecond)
@@ -125,7 +125,7 @@ func TestWriteWriteConflict(t *testing.T) {
 		defer wg.Done()
 		// Sleep for 20 ms
 		time.Sleep(20 * time.Millisecond)
-		txn := kv.NewTransaction()
+		txn := kv.BeginTransaction()
 		txn.Put([]byte("key1"), []byte("value2"))
 		txn.Commit()
 	}()
@@ -149,14 +149,14 @@ func TestNonConflictingWrites(t *testing.T) {
 
 	go func() {
 		defer wg.Done()
-		txn := kv.NewTransaction()
+		txn := kv.BeginTransaction()
 		txn.Put([]byte("key1"), []byte("value1"))
 		txn.Commit()
 	}()
 
 	go func() {
 		defer wg.Done()
-		txn := kv.NewTransaction()
+		txn := kv.BeginTransaction()
 		txn.Put([]byte("key2"), []byte("value2"))
 		txn.Commit()
 	}()
@@ -179,7 +179,7 @@ func TestCommitAndCrash(t *testing.T) {
 	}
 
 	count := 100
-	txn := kv.NewTransaction()
+	txn := kv.BeginTransaction()
 	for i := range count {
 		txn.Put([]byte(fmt.Sprintf("key%d", i)), []byte(fmt.Sprintf("value%d", i)))
 	}

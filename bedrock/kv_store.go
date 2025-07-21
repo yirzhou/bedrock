@@ -55,6 +55,8 @@ type KVStore struct {
 
 	// Lock manager for transactions.
 	lockManager *LockManager
+
+	checkpointNeeded bool
 }
 
 // compactionLoop is the main loop for the compaction process.
@@ -110,6 +112,7 @@ func GetSegmentIDFromManifestFileName(fileName string) (uint64, error) {
 // TODOs:
 // 1. Add a compaction job that removes old checkpoints and sparse index files.
 func Open(config *Configuration) (*KVStore, error) {
+	lastTimestamp := time.Now()
 	err := PreCreateDirectories(config)
 	if err != nil {
 		log.Fatalf("Error creating directories: %v", err)
@@ -119,6 +122,8 @@ func Open(config *Configuration) (*KVStore, error) {
 	if err != nil && !os.IsNotExist(err) {
 		log.Println("Open: Error recovering from CURRENT file:", err)
 	}
+	log.Println("Open: Time taken to recover from CURRENT file:", time.Since(lastTimestamp))
+	lastTimestamp = time.Now()
 
 	// Recover the sparse indexes from levels metadata.
 	memState := NewMemState()
@@ -127,6 +132,8 @@ func Open(config *Configuration) (*KVStore, error) {
 		log.Println("Open: Error recovering from levels:", err)
 		return nil, err
 	}
+	log.Println("Open: Time taken to recover from levels:", time.Since(lastTimestamp))
+	lastTimestamp = time.Now()
 
 	// Recover from WAL files.
 	wal, err := recoverFromWALs(lastSegmentID, filepath.Join(config.GetBaseDir(), logsDir), memState, config.GetCheckpointSize())
@@ -134,16 +141,18 @@ func Open(config *Configuration) (*KVStore, error) {
 		log.Println("Open: Error recovering from WAL files:", err)
 		return nil, err
 	}
+	log.Println("Open: Time taken to recover from WAL files:", time.Since(lastTimestamp))
 
 	// Return the fully initialized, ready-to-use KVStore object.
 	kv := &KVStore{
-		wal:             wal,
-		memState:        memState,
-		activeSegmentID: lastSegmentID + 1,
-		levels:          levels,
-		shutdownChan:    make(chan struct{}),
-		config:          config,
-		lockManager:     NewLockManager(),
+		wal:              wal,
+		memState:         memState,
+		activeSegmentID:  lastSegmentID + 1,
+		levels:           levels,
+		shutdownChan:     make(chan struct{}),
+		config:           config,
+		lockManager:      NewLockManager(),
+		checkpointNeeded: false,
 	}
 	// Start the compaction loop.
 	if config.GetCompactionIntervalMs() > 0 {
@@ -152,8 +161,8 @@ func Open(config *Configuration) (*KVStore, error) {
 	return kv, nil
 }
 
-// NewTransaction creates a new transaction.
-func (kv *KVStore) NewTransaction() *Transaction {
+// BeginTransaction creates a new transaction.
+func (kv *KVStore) BeginTransaction() *Transaction {
 	return NewTransaction(kv)
 }
 
@@ -313,7 +322,7 @@ func (kv *KVStore) getInternal(key []byte) ([]byte, bool) {
 // It creates a new transaction and commits it.
 // It is a wrapper around Transaction.Get.
 func (kv *KVStore) Get(key []byte) ([]byte, bool) {
-	txn := kv.NewTransaction()
+	txn := kv.BeginTransaction()
 	value, found := txn.Get(key)
 	txn.Commit()
 	return value, found
@@ -347,7 +356,7 @@ func (kv *KVStore) get(key []byte) ([]byte, bool) {
 // It creates a new transaction and commits it.
 // It is a wrapper around Transaction.Put.
 func (kv *KVStore) Put(key, value []byte) error {
-	txn := kv.NewTransaction()
+	txn := kv.BeginTransaction()
 	txn.Put(key, value)
 	txn.Commit()
 	return nil
@@ -399,9 +408,19 @@ func (kv *KVStore) putInternal(key, value []byte) error {
 }
 
 // Delete deletes a key-value pair from the KVStore.
+// It creates a new transaction and commits it.
+// It is a wrapper around Transaction.Delete.
+func (kv *KVStore) Delete(key []byte) error {
+	txn := kv.BeginTransaction()
+	txn.Delete(key)
+	txn.Commit()
+	return nil
+}
+
+// DeleteV1 deletes a key-value pair from the KVStore.
 // It writes a tombstone to the WAL and the memtable.
 // TODO: It also updates the offset in the sparse index.
-func (kv *KVStore) Delete(key []byte) error {
+func (kv *KVStore) DeleteV1(key []byte) error {
 	// Ensures that the key is not CHECKPOINT.
 	if bytes.Equal(key, lib.CHECKPOINT) {
 		log.Printf("Delete: Invalid key: %s\n", string(key))

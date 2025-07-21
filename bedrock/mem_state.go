@@ -35,6 +35,12 @@ type sparseIndex []sparseIndexEntry
 
 type sparseIndexes map[uint64]sparseIndex
 
+// ClearState clears the memtable.
+// Only clears the memtable, not the sparse index.
+func (m *MemState) ClearState() {
+	m.state = make(map[string][]byte)
+}
+
 // GetSparseIndex returns the sparse index for a given segment ID.
 func (m *MemState) GetSparseIndex(segmentID uint64) sparseIndex {
 	res, ok := m.sparseIndexMap[segmentID]
@@ -92,6 +98,12 @@ func (m *MemState) FindKeyInSparseIndex(segmentID uint64, key []byte) int64 {
 	if idx == len(m.sparseIndexMap[segmentID]) {
 		idx--
 	}
+
+	// Handle not found.
+	if idx == -1 {
+		return -1
+	}
+
 	// Check if the key at the idx is larger than the key we are looking for. If it is larger, we need to go back one index.
 	if cmp(sparseIndexEntry{key: key}, m.sparseIndexMap[segmentID][idx]) < 0 {
 		if idx-1 >= 0 {

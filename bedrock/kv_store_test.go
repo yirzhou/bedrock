@@ -27,9 +27,10 @@ func TestPutGet(t *testing.T) {
 	}
 
 	keyVal := make(map[string]string)
+	count := 100
 
 	// Put 100 key-value pairs.
-	for range 100 {
+	for range count {
 		key := GenerateRandomString(10)
 		value := GenerateRandomString(10)
 		kv.Put([]byte(key), []byte(value))
@@ -52,7 +53,7 @@ func TestRecoveryNormalWithBatchTransactions(t *testing.T) {
 	}
 	count := 1024
 	// Put 1024 key-value pairs.
-	txn := kv.NewTransaction()
+	txn := kv.BeginTransaction()
 	for i := range count {
 		txn.Put([]byte(fmt.Sprintf("key-%d", i)), []byte(fmt.Sprintf("value-%d", i)))
 	}
@@ -91,7 +92,7 @@ func TestRecoveryNormalWithIndividualTransactions(t *testing.T) {
 	count := 100
 	// Put 100 key-value pairs.
 	for i := range count {
-		txn := kv.NewTransaction()
+		txn := kv.BeginTransaction()
 		txn.Put([]byte(fmt.Sprintf("key-%d", i)), []byte(fmt.Sprintf("value-%d", i)))
 		txn.Commit()
 	}
@@ -204,13 +205,16 @@ func TestRecoveryWithCorruptedWALFile(t *testing.T) {
 
 func TestRecoveryWithCorruptedSparseIndexFile(t *testing.T) {
 	dir := t.TempDir()
-	kv, _ := Open(NewConfigurationNoCompaction().WithBaseDir(dir).WithCheckpointSize(16))
+	config := NewConfigurationNoCompaction().WithBaseDir(dir).WithCheckpointSize(16)
+	kv, _ := Open(config)
 
-	count := 20
+	count := 1024
 	// Put key-value pairs.
+	txn := kv.BeginTransaction()
 	for i := range count {
-		kv.Put([]byte(fmt.Sprintf("key-%d", i)), []byte(fmt.Sprintf("value-%d", i)))
+		txn.Put([]byte(fmt.Sprintf("key-%d", i)), []byte(fmt.Sprintf("value-%d", i)))
 	}
+	txn.Commit()
 
 	segmentID := kv.GetCurrentSegmentIDUnsafe() - 1
 
@@ -223,7 +227,8 @@ func TestRecoveryWithCorruptedSparseIndexFile(t *testing.T) {
 	os.Truncate(sparseIndexFilePath, stat.Size()-1)
 
 	// The database should be recovered from all segments and WALs.
-	kv, _ = Open(NewConfigurationNoCompaction().WithBaseDir(dir))
+	// Record the time it takes to recover
+	kv, _ = Open(config)
 	defer kv.CloseAndCleanUp()
 
 	// Check if the key-value pairs are recovered.
@@ -273,12 +278,14 @@ func TestRecoveryNormalWithVariousCheckpointSizes(t *testing.T) {
 	for checkpointSize <= 1024*1024 {
 		dir := t.TempDir()
 		kv, _ := Open(NewDefaultConfiguration().WithNoLog().WithBaseDir(dir).WithCheckpointSize(int64(checkpointSize)))
+		count := 100
 
-		// Put 100 key-value pairs.
-		for i := range 100 {
-			kv.Put([]byte(fmt.Sprintf("key-%d", i)), []byte(fmt.Sprintf("value-%d", i)))
+		// Put key-value pairs.
+		txn := kv.BeginTransaction()
+		for i := range count {
+			txn.Put([]byte(fmt.Sprintf("key-%d", i)), []byte(fmt.Sprintf("value-%d", i)))
 		}
-
+		txn.Commit()
 		// Close the DB
 		kv.Close()
 
@@ -287,45 +294,55 @@ func TestRecoveryNormalWithVariousCheckpointSizes(t *testing.T) {
 		defer kv.CloseAndCleanUp()
 
 		// Check if the key-value pairs are recovered.
-		for i := range 100 {
-			value, found := kv.Get([]byte(fmt.Sprintf("key-%d", i)))
+		txn = kv.BeginTransaction()
+		for i := range count {
+			value, found := txn.Get([]byte(fmt.Sprintf("key-%d", i)))
 			assert.True(t, found)
 			assert.Equal(t, []byte(fmt.Sprintf("value-%d", i)), value, "checkpointSize: %d, key: %s, value: %s", checkpointSize, fmt.Sprintf("key-%d", i), fmt.Sprintf("value-%d", i))
 		}
 		checkpointSize *= 2
+		txn.Commit()
 	}
 }
 
-func TestDelete(t *testing.T) {
+func TestDeleteBatch(t *testing.T) {
 	dir := t.TempDir()
-	kv, _ := Open(NewDefaultConfiguration().WithNoLog().WithBaseDir(dir))
+	kv, _ := Open(NewConfigurationNoCompaction().WithNoLog().WithBaseDir(dir))
 	defer kv.CloseAndCleanUp()
 
-	// Put 100 key-value pairs.
-	for i := range 100 {
-		kv.Put([]byte(fmt.Sprintf("key-%d", i)), []byte(fmt.Sprintf("value-%d", i)))
-	}
+	count := 1024
 
-	// Delete 100 key-value pairs.
-	for i := range 100 {
-		err := kv.Delete([]byte(fmt.Sprintf("key-%d", i)))
+	// Put key-value pairs.
+	txn := kv.BeginTransaction()
+	for i := range count {
+		txn.Put([]byte(fmt.Sprintf("key-%d", i)), []byte(fmt.Sprintf("value-%d", i)))
+	}
+	txn.Commit()
+
+	// Delete key-value pairs.
+	txn = kv.BeginTransaction()
+	for i := range count {
+		err := txn.Delete([]byte(fmt.Sprintf("key-%d", i)))
 		assert.NoError(t, err)
 	}
+	txn.Commit()
 
 	// Check if the key-value pairs are deleted.
-	for i := range 100 {
+	for i := range count {
 		value, found := kv.Get([]byte(fmt.Sprintf("key-%d", i)))
 		assert.False(t, found)
 		assert.Nil(t, value)
 	}
 
-	// Put 100 key-value pairs again.
-	for i := range 100 {
-		kv.Put([]byte(fmt.Sprintf("key-%d", i)), []byte(fmt.Sprintf("value-%d", i)))
+	// Put key-value pairs again.
+	txn = kv.BeginTransaction()
+	for i := range count {
+		txn.Put([]byte(fmt.Sprintf("key-%d", i)), []byte(fmt.Sprintf("value-%d", i)))
 	}
+	txn.Commit()
 
 	// Check if the key-value pairs are recovered.
-	for i := range 100 {
+	for i := range count {
 		value, found := kv.Get([]byte(fmt.Sprintf("key-%d", i)))
 		assert.True(t, found)
 		assert.Equal(t, []byte(fmt.Sprintf("value-%d", i)), value)

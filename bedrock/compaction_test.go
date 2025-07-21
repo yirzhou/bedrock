@@ -3,6 +3,7 @@ package bedrock
 import (
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"testing"
@@ -127,26 +128,36 @@ func TestFlushManifestFileWithLevels(t *testing.T) {
 
 // This test may take a while to run.
 func TestPerformMerge(t *testing.T) {
-	config := NewDefaultConfiguration().WithNoLog().WithBaseDir(t.TempDir()).WithSegmentFileSizeThresholdLX(128).WithCheckpointSize(128).WithCompactionIntervalMs(0)
+	config := NewDefaultConfiguration().WithNoLog().WithBaseDir(t.TempDir()).WithSegmentFileSizeThresholdLX(32).WithMemtableSizeThreshold(4).WithCompactionIntervalMs(0)
 	kv, err := Open(config)
 	assert.NoError(t, err)
 	defer kv.CloseAndCleanUp()
 
-	keyCount := 20
+	keyCount := 128
 
+	txn := kv.BeginTransaction()
 	for i := range keyCount {
-		kv.putInternal([]byte(fmt.Sprintf("key%d", i)), []byte(fmt.Sprintf("value%d", i)))
+		txn.Put([]byte(fmt.Sprintf("key%d", i)), []byte(fmt.Sprintf("value%d", i)))
 	}
-	for i := range keyCount {
-		kv.putInternal([]byte(fmt.Sprintf("key%d", i)), []byte(fmt.Sprintf("value%d", i+keyCount)))
-	}
+	txn.Commit()
 
+	txn = kv.BeginTransaction()
+	for i := range keyCount {
+		txn.Put([]byte(fmt.Sprintf("key%d", i)), []byte(fmt.Sprintf("value%d", i+keyCount)))
+	}
+	txn.Commit()
 	// Also remove some keys.
+	txn = kv.BeginTransaction()
 	for i := range keyCount {
 		if i%2 == 0 {
-			kv.Delete([]byte(fmt.Sprintf("key%d", i)))
+			txn.Delete([]byte(fmt.Sprintf("key%d", i)))
 		}
 	}
+	txn.Commit()
+
+	// Force a checkpoint so that the sparse indexes are updated.
+	err = kv.doCheckpoint()
+	assert.NoError(t, err)
 
 	compactionPlan := kv.getNextCompactionPlan()
 	assert.NotNil(t, compactionPlan)
@@ -198,6 +209,7 @@ func TestPerformMerge(t *testing.T) {
 	}
 
 	for k, v := range kvMap {
+		log.Println("k: ", k)
 		value, found := kv.Get([]byte(k))
 		assert.True(t, found)
 		assert.Equal(t, v, value)
@@ -224,7 +236,7 @@ func TestDoCompaction(t *testing.T) {
 	// Also remove some keys.
 	for i := range keyCount {
 		if i%2 == 0 {
-			kv.Delete([]byte(fmt.Sprintf("key%d", i)))
+			kv.DeleteV1([]byte(fmt.Sprintf("key%d", i)))
 			delete(kvMap, fmt.Sprintf("key%d", i))
 		}
 	}

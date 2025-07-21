@@ -152,6 +152,7 @@ func (txn *Transaction) Commit() error {
 	// Perform the checkpointing if needed.
 	if walErr == lib.ErrCheckpointNeeded || txn.store.memState.Size() >= txn.store.config.GetMemtableSizeThreshold() {
 		// TODO: the checkpointing can also be done in the background.
+		txn.store.checkpointNeeded = true
 		err := txn.store.doCheckpoint()
 		if err != nil {
 			// If the checkpoint fails, it's a serious issue, but the transaction

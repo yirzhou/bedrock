@@ -121,10 +121,52 @@ func tryRecoverFromCurrentFile(currentFilePath string) ([][]SegmentMetadata, uin
 	return levels, segmentID, nil
 }
 
+// recoverSparseIndexFromSegmentFile recovers the sparse index from the segment file.
+// It returns an error if the segment file is corrupted.
+func recoverSparseIndexFromSegmentFile(segmentFilePath string, memState *MemState) error {
+	segmentID, err := GetSegmentIDFromSegmentFilePath(segmentFilePath)
+	if err != nil {
+		log.Println("recoverSparseIndexFromSegmentFile: Error getting segment ID from segment file:", err)
+		return err
+	}
+	segmentFile, err := os.Open(segmentFilePath)
+	if err != nil {
+		log.Println("recoverSparseIndexFromSegmentFile: Error opening segment file:", err)
+		return err
+	}
+	defer segmentFile.Close()
+	segmentFile.Seek(0, io.SeekStart)
+
+	var offset int64 = 0
+	var cnt int = 0
+	for {
+		_, err = segmentFile.Seek(0, io.SeekCurrent)
+		if err != nil {
+			log.Println("recoverSparseIndexFromSegmentFile: Error seeking:", err)
+			return err
+		}
+		record, err := getNextKVRecord(segmentFile)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			log.Println("recoverSparseIndexFromSegmentFile: Error reading KV record:", err)
+			return err
+		}
+		if cnt%16 == 0 {
+			memState.AddSparseIndexEntry(segmentID, record.Key, offset)
+		}
+		offset += int64(record.Size())
+		cnt++
+	}
+
+	return nil
+}
+
 // recoverMemStateFromLevels recovers the memstate from the levels by adding sparse index entries to the memstate.
 func recoverMemStateFromLevels(indexDir string, levels [][]SegmentMetadata, memState *MemState) error {
 	for _, level := range levels {
-		for idx, segmentMetadata := range level {
+		for _, segmentMetadata := range level {
 			sparseIndexFilePath := filepath.Join(indexDir, segmentMetadata.GetSparseIndexFileName())
 			sparseIndexFile, err := os.Open(sparseIndexFilePath)
 			if err != nil {
@@ -141,13 +183,24 @@ func recoverMemStateFromLevels(indexDir string, levels [][]SegmentMetadata, memS
 						break
 					}
 					log.Println("recoverMemStateFromLevels: Error reading sparse index record:", err)
-					if idx == len(level)-1 {
-						os.Truncate(sparseIndexFilePath, offset)
-						break
-					} else {
-						// Cannot recover from this error
-						log.Fatalf("recoverMemStateFromLevels: Cannot recover from error: %v", err)
+					os.Truncate(sparseIndexFilePath, offset)
+					// Build the sparse index from the segment file
+					// Delet the current sparse index
+					memState.RemoveSparseIndexEntry(segmentMetadata.id)
+					// Recover the sparse index from the segment file
+					err = recoverSparseIndexFromSegmentFile(segmentMetadata.filePath, memState)
+					if err != nil {
+						log.Println("recoverMemStateFromLevels: Error recovering sparse index from segment file:", err)
+						return err
 					}
+					// Also, flush the sparse index to the sparse index file.
+					sparseIndexFilePath := filepath.Join(indexDir, getSparseIndexFileNameFromSegmentId(segmentMetadata.id))
+					err = memState.FlushSparseIndex(sparseIndexFilePath)
+					if err != nil {
+						log.Println("recoverMemStateFromLevels: Error flushing sparse index to file:", err)
+						return err
+					}
+					break
 				}
 				if sparseIndexRecord == nil {
 					// No more records.

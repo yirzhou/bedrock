@@ -44,7 +44,6 @@ func (kv *KVStore) RollToNewSegment() error {
 // and writes the SSTable to the segment file.
 // It also appends a special CHECKPOINT record to the WAL and updates the checkpoint file.
 // Finally, it removes all old WAL files.
-// TODO: checkpointing on normal shutdown.
 func (kv *KVStore) doCheckpoint() error {
 	// Create the checkpoint directory if it doesn't exist.
 	checkpointDir := filepath.Join(kv.config.GetBaseDir(), checkpointDir)
@@ -115,6 +114,8 @@ func (kv *KVStore) doCheckpoint() error {
 		log.Println("Error cleaning up WAL files:", err)
 		return err
 	}
+	// Clear the memtable
+	kv.memState.ClearState()
 
 	// TODO: 8. Remove all old checkpoints via compaction.
 	return nil
