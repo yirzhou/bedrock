@@ -1,4 +1,4 @@
-package db
+package bedrock
 
 import (
 	"encoding/binary"
@@ -10,8 +10,9 @@ import (
 )
 
 const (
-	headerSize   = 20
-	checksumSize = 4
+	headerSize    = 20
+	newHeaderSize = 17
+	checksumSize  = 4
 	// CheckpointSize = 64 * 1024 // 64KiB
 	CheckpointSize = 1024 // 1KiB for testing
 	AppendFlags    = os.O_RDWR | os.O_CREATE | os.O_APPEND
@@ -34,6 +35,7 @@ type WAL struct {
 	lastSequenceNum uint64
 }
 
+// Deprecated.
 // prepareRecordData prepares the record data for the log.
 func prepareRecordData(sequenceNum uint64, key, value []byte) []byte {
 	keySize := uint32(len(key))
@@ -49,6 +51,7 @@ func prepareRecordData(sequenceNum uint64, key, value []byte) []byte {
 	return bytes
 }
 
+// Deprecated.
 // createLogRecord creates a log record for the given sequence number, key, and value.
 func createLogRecord(sequenceNum uint64, key, value []byte) LogRecord {
 	recordData := prepareRecordData(sequenceNum, key, value)
@@ -64,6 +67,46 @@ func createLogRecord(sequenceNum uint64, key, value []byte) LogRecord {
 	}
 }
 
+// AppendTransaction appends a transaction record to the log.
+func (l *WAL) AppendTransaction(payload []byte) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	// 1. Increment the sequence number.
+	l.lastSequenceNum++
+
+	// 2. Create the record using this new sequence number in binary format.
+	data := SerializeV2(lib.TXN_COMMIT, l.lastSequenceNum, payload)
+
+	// 3. Write and Sync.
+	_, err := l.activeFile.Write(data)
+	if err != nil {
+		log.Println("Error writing commit record:", err)
+		return err
+	}
+	err = l.activeFile.Sync()
+	if err != nil {
+		log.Println("Error syncing file:", err)
+		return err
+	}
+
+	// 4. Check if the log has reached its size threshold.
+	fileInfo, err := l.activeFile.Stat()
+	if err != nil {
+		log.Println("Error getting file info:", err)
+		return err
+	}
+
+	// 5. Check if the segment size has been reached. If so, roll to a new segment
+	if fileInfo.Size() >= l.segmentSize {
+		// Special error to signal that the log has reached its size threshold.
+		// This is used to trigger a checkpoint.
+		log.Println("WAL is ready to be checkpointed")
+		return lib.ErrCheckpointNeeded
+	}
+	return nil
+}
+
 // Append appends a new record to the log.
 func (l *WAL) Append(key, value []byte) error {
 	l.mu.Lock()
@@ -72,13 +115,10 @@ func (l *WAL) Append(key, value []byte) error {
 	// 1. Increment the sequence number.
 	l.lastSequenceNum++
 
-	// 2. Create the record using this new sequence number.
-	record := createLogRecord(l.lastSequenceNum, key, value)
+	// 2. Encode the record to its binary format.
+	encodedRecord := SerializeV2(lib.TXN_PUT, l.lastSequenceNum, GetPayloadForPut(key, value))
 
-	// 3. Encode the record to its binary format.
-	encodedRecord := record.Serialize()
-
-	// 4. Write and Sync.
+	// 3. Write and Sync.
 	_, err := l.activeFile.Write(encodedRecord)
 	if err != nil {
 		return err
@@ -90,14 +130,14 @@ func (l *WAL) Append(key, value []byte) error {
 		return err
 	}
 
-	// 5. Check if the log has reached its size threshold.
+	// 4. Check if the log has reached its size threshold.
 	fileInfo, err := l.activeFile.Stat()
 	if err != nil {
 		log.Println("Error getting file info:", err)
 		return err
 	}
 
-	// 6. Check if the segment size has been reached. If so, roll to a new segment
+	// 5. Check if the segment size has been reached. If so, roll to a new segment
 	if fileInfo.Size() >= l.segmentSize {
 		// Special error to signal that the log has reached its size threshold.
 		// This is used to trigger a checkpoint.
@@ -105,6 +145,49 @@ func (l *WAL) Append(key, value []byte) error {
 		return lib.ErrCheckpointNeeded
 	}
 	return nil
+}
+
+// recoverNextRecordV2 recovers the next record from the WAL file.
+func recoverNextRecordV2(reader io.Reader) (*LogRecordV2, error) {
+	buf := make([]byte, newHeaderSize)
+	_, err := io.ReadFull(reader, buf)
+	if err != nil {
+		if err != io.EOF {
+			log.Println("Error reading the header of the next WAL record v2:", err)
+		}
+		return nil, err
+	}
+
+	// Read the header fields.
+	checksum := binary.LittleEndian.Uint32(buf[:checksumSize])
+	sequenceNum := binary.LittleEndian.Uint64(buf[checksumSize : checksumSize+8])
+	recordType := buf[checksumSize+8]
+	payloadSize := binary.LittleEndian.Uint32(buf[checksumSize+9 : newHeaderSize])
+
+	// Read the payload.
+	payloadBuf := make([]byte, payloadSize)
+	_, err = io.ReadFull(reader, payloadBuf)
+	if err != nil {
+		if err != io.EOF {
+			log.Println("Error reading the payload of the next WAL record v2:", err)
+		}
+		return nil, err
+	}
+	// Compute checksum of entire record.
+	dataToVerify := append(buf[checksumSize:], payloadBuf...)
+	computedChecksum := ComputeChecksum(dataToVerify)
+	if computedChecksum != checksum {
+		// Bad checksum.
+		log.Println("Error reading next WAL record: checksum mismatch")
+		return nil, lib.ErrBadChecksum
+	}
+	return &LogRecordV2{
+		CheckSum:    checksum,
+		SequenceNum: sequenceNum,
+		RecordType:  recordType,
+		PayloadSize: payloadSize,
+		Payload:     payloadBuf,
+	}, nil
 }
 
 // recoverNextRecord reads the next record from the WAL file.

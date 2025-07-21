@@ -1,8 +1,9 @@
-package db
+package bedrock
 
 import (
 	"io/ioutil"
 	"log"
+	"os"
 )
 
 type Configuration struct {
@@ -10,6 +11,7 @@ type Configuration struct {
 	BaseDir                    string
 	SegmentFileSizeThresholdLX int64
 	CompactionIntervalMs       uint64
+	MemtableSizeThreshold      int64
 }
 
 // NewDefaultConfiguration returns the default DB configuration.
@@ -18,8 +20,14 @@ func NewDefaultConfiguration() *Configuration {
 		CheckpointSize:             1024, // 1KiB
 		BaseDir:                    "./db",
 		SegmentFileSizeThresholdLX: 1024,
-		CompactionIntervalMs:       20, // 20ms
+		CompactionIntervalMs:       20,  // 20ms
+		MemtableSizeThreshold:      128, // 128 keys
 	}
+}
+
+func (c *Configuration) WithLog() *Configuration {
+	log.SetOutput(os.Stdout)
+	return c
 }
 
 func (c *Configuration) WithNoLog() *Configuration {
@@ -42,6 +50,17 @@ func (c *Configuration) WithCompactionIntervalMs(intervalMs uint64) *Configurati
 // GetCompactionIntervalMs returns the compaction interval for the DB.
 func (c *Configuration) GetCompactionIntervalMs() uint64 {
 	return c.CompactionIntervalMs
+}
+
+// WithMemtableSizeThreshold sets the memtable size threshold for the DB.
+func (c *Configuration) WithMemtableSizeThreshold(size int64) *Configuration {
+	c.MemtableSizeThreshold = size
+	return c
+}
+
+// GetMemtableSizeThreshold returns the memtable size threshold for the DB.
+func (c *Configuration) GetMemtableSizeThreshold() int64 {
+	return c.MemtableSizeThreshold
 }
 
 // WithSegmentFileSizeThresholdLX sets the segment file size threshold for the DB.

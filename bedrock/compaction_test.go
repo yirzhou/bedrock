@@ -1,4 +1,4 @@
-package db
+package bedrock
 
 import (
 	"fmt"
@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"wal/lib"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -52,7 +51,8 @@ func TestGetNewLevels(t *testing.T) {
 }
 
 func TestDeleteOldSegmentsAndIndexes(t *testing.T) {
-	config := NewDefaultConfiguration().WithNoLog().WithBaseDir(lib.GetTempDirForTest(t))
+	tempDir := t.TempDir()
+	config := NewDefaultConfiguration().WithNoLog().WithBaseDir(tempDir)
 	kv, err := Open(config)
 	assert.NoError(t, err)
 

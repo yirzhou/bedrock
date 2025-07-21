@@ -1,30 +1,17 @@
-package db
+package bedrock
 
 import (
 	"fmt"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 )
 
-// generateRandomString generates a random string of a given length.
-func generateRandomString(length int) string {
-	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	seededRand := rand.New(rand.NewSource(time.Now().UnixNano()))
-	b := make([]byte, length)
-	for i := range b {
-		b[i] = charset[seededRand.Intn(len(charset))]
-	}
-	return string(b)
-}
-
 func TestOpen(t *testing.T) {
 	dir := t.TempDir()
-	kv, err := Open(NewDefaultConfiguration().WithNoLog().WithBaseDir(dir))
+	kv, err := Open(NewConfigurationNoCompaction().WithBaseDir(dir))
 	defer kv.CloseAndCleanUp()
 	if err != nil {
 		t.Fatalf("Error creating KVStore: %v", err)
@@ -33,7 +20,7 @@ func TestOpen(t *testing.T) {
 
 func TestPutGet(t *testing.T) {
 	dir := t.TempDir()
-	kv, err := Open(NewDefaultConfiguration().WithNoLog().WithBaseDir(dir))
+	kv, err := Open(NewConfigurationNoCompaction().WithBaseDir(dir))
 	defer kv.CloseAndCleanUp()
 	if err != nil {
 		t.Fatalf("Error creating KVStore: %v", err)
@@ -43,8 +30,8 @@ func TestPutGet(t *testing.T) {
 
 	// Put 100 key-value pairs.
 	for range 100 {
-		key := generateRandomString(10)
-		value := generateRandomString(10)
+		key := GenerateRandomString(10)
+		value := GenerateRandomString(10)
 		kv.Put([]byte(key), []byte(value))
 		keyVal[key] = value
 	}
@@ -57,16 +44,19 @@ func TestPutGet(t *testing.T) {
 	}
 }
 
-func TestRecoveryNormal(t *testing.T) {
+func TestRecoveryNormalWithBatchTransactions(t *testing.T) {
 	dir := t.TempDir()
-	kv, err := Open(NewDefaultConfiguration().WithNoLog().WithBaseDir(dir))
+	kv, err := Open(NewConfigurationNoCompaction().WithBaseDir(dir))
 	if err != nil {
 		t.Fatalf("Error creating KVStore: %v", err)
 	}
-	// Put 100 key-value pairs.
-	for i := range 100 {
-		kv.Put([]byte(fmt.Sprintf("key-%d", i)), []byte(fmt.Sprintf("value-%d", i)))
+	count := 1024
+	// Put 1024 key-value pairs.
+	txn := kv.NewTransaction()
+	for i := range count {
+		txn.Put([]byte(fmt.Sprintf("key-%d", i)), []byte(fmt.Sprintf("value-%d", i)))
 	}
+	txn.Commit()
 
 	// Record the last sequence number and current segment ID.
 	lastSequenceNum := kv.GetLastSequenceNum()
@@ -75,7 +65,7 @@ func TestRecoveryNormal(t *testing.T) {
 	// Close the KVStore.
 	kv.Close()
 	// Recover the KVStore.
-	kv, err = Open(NewDefaultConfiguration().WithNoLog().WithBaseDir(dir))
+	kv, err = Open(NewConfigurationNoCompaction().WithBaseDir(dir))
 	if err != nil {
 		t.Fatalf("Error recovering KVStore: %v", err)
 	}
@@ -85,7 +75,81 @@ func TestRecoveryNormal(t *testing.T) {
 	assert.Equal(t, segmentID, kv.GetCurrentSegmentIDSafe())
 
 	// Check if the key-value pairs are recovered.
-	for i := range 100 {
+	for i := range count {
+		value, found := kv.Get([]byte(fmt.Sprintf("key-%d", i)))
+		assert.True(t, found)
+		assert.Equal(t, []byte(fmt.Sprintf("value-%d", i)), value)
+	}
+}
+
+func TestRecoveryNormalWithIndividualTransactions(t *testing.T) {
+	dir := t.TempDir()
+	kv, err := Open(NewConfigurationNoCompaction().WithBaseDir(dir))
+	if err != nil {
+		t.Fatalf("Error creating KVStore: %v", err)
+	}
+	count := 100
+	// Put 100 key-value pairs.
+	for i := range count {
+		txn := kv.NewTransaction()
+		txn.Put([]byte(fmt.Sprintf("key-%d", i)), []byte(fmt.Sprintf("value-%d", i)))
+		txn.Commit()
+	}
+
+	// Record the last sequence number and current segment ID.
+	lastSequenceNum := kv.GetLastSequenceNum()
+	segmentID := kv.GetCurrentSegmentIDSafe()
+
+	// Close the KVStore.
+	kv.Close()
+	// Recover the KVStore.
+	kv, err = Open(NewConfigurationNoCompaction().WithBaseDir(dir))
+	if err != nil {
+		t.Fatalf("Error recovering KVStore: %v", err)
+	}
+	defer kv.CloseAndCleanUp()
+	// Check if the last sequence number and current segment ID are the same.
+	assert.Equal(t, lastSequenceNum, kv.GetLastSequenceNum())
+	assert.Equal(t, segmentID, kv.GetCurrentSegmentIDSafe())
+
+	// Check if the key-value pairs are recovered.
+	for i := range count {
+		value, found := kv.Get([]byte(fmt.Sprintf("key-%d", i)))
+		assert.True(t, found)
+		assert.Equal(t, []byte(fmt.Sprintf("value-%d", i)), value)
+	}
+}
+
+func TestRecoveryNormalBlindWrites(t *testing.T) {
+	dir := t.TempDir()
+	kv, err := Open(NewConfigurationNoCompaction().WithBaseDir(dir))
+	if err != nil {
+		t.Fatalf("Error creating KVStore: %v", err)
+	}
+	count := 20
+	// Put key-value pairs.
+	for i := range count {
+		kv.PutV1([]byte(fmt.Sprintf("key-%d", i)), []byte(fmt.Sprintf("value-%d", i)))
+	}
+
+	// Record the last sequence number and current segment ID.
+	lastSequenceNum := kv.GetLastSequenceNum()
+	segmentID := kv.GetCurrentSegmentIDSafe()
+
+	// Close the KVStore.
+	kv.Close()
+	// Recover the KVStore.
+	kv, err = Open(NewConfigurationNoCompaction().WithBaseDir(dir))
+	if err != nil {
+		t.Fatalf("Error recovering KVStore: %v", err)
+	}
+	defer kv.CloseAndCleanUp()
+	// Check if the last sequence number and current segment ID are the same.
+	assert.Equal(t, lastSequenceNum, kv.GetLastSequenceNum())
+	assert.Equal(t, segmentID, kv.GetCurrentSegmentIDSafe())
+
+	// Check if the key-value pairs are recovered.
+	for i := range count {
 		value, found := kv.Get([]byte(fmt.Sprintf("key-%d", i)))
 		assert.True(t, found)
 		assert.Equal(t, []byte(fmt.Sprintf("value-%d", i)), value)
@@ -94,13 +158,15 @@ func TestRecoveryNormal(t *testing.T) {
 
 func TestRecoveryWithCorruptedWALFile(t *testing.T) {
 	dir := t.TempDir()
-	kv, err := Open(NewDefaultConfiguration().WithNoLog().WithBaseDir(dir))
+	count := 7
+	config := NewConfigurationNoCompaction().WithBaseDir(dir).WithMemtableSizeThreshold(int64(count + 1)).WithCheckpointSize(1024 * 1024)
+	kv, err := Open(config)
 	if err != nil {
 		t.Fatalf("Error creating KVStore: %v", err)
 	}
 
-	// Put 100 key-value pairs.
-	for i := range 100 {
+	// Put key-value pairs.
+	for i := range count {
 		kv.Put([]byte(fmt.Sprintf("key-%d", i)), []byte(fmt.Sprintf("value-%d", i)))
 	}
 
@@ -112,38 +178,37 @@ func TestRecoveryWithCorruptedWALFile(t *testing.T) {
 	// Corrupt the last bit of the latest WAL file.
 	walFilePath := filepath.Join(dir, "/logs/"+getWalFileNameFromSegmentID(segmentID))
 	stat, err := os.Stat(walFilePath)
-	if err != nil {
-		t.Fatalf("Error getting file size: %v", err)
-	}
-	os.Truncate(walFilePath, stat.Size()-1)
+	assert.NoError(t, err)
+	assert.NoError(t, os.Truncate(walFilePath, stat.Size()-1))
 
 	// The database should be recovered from all segments and WALs.
 	// The last bit will only corrupt the last record in the WAL file, which is the "key-99" record.
 	// So the key-value pairs from 0 to 98 should be recovered, but the key-value pair for "key-99" should be lost.
-	kv, err = Open(NewDefaultConfiguration().WithNoLog().WithBaseDir(dir))
+	kv, err = Open(config)
 	defer kv.CloseAndCleanUp()
 	if err != nil {
 		t.Fatalf("Error recovering KVStore: %v", err)
 	}
 
 	// Check if the key-value pairs are recovered.
-	for i := range 99 {
+	for i := range count - 1 {
 		value, found := kv.Get([]byte(fmt.Sprintf("key-%d", i)))
 		assert.True(t, found)
 		assert.Equal(t, []byte(fmt.Sprintf("value-%d", i)), value)
 	}
-	// Confirm the key-value pair for "key-99" is not found.
-	value, found := kv.Get([]byte("key-99"))
+	// Confirm the key-value pair for "key-127" is not found.
+	value, found := kv.Get([]byte(fmt.Sprintf("key-%d", count-1)))
 	assert.False(t, found)
 	assert.Nil(t, value)
 }
 
 func TestRecoveryWithCorruptedSparseIndexFile(t *testing.T) {
 	dir := t.TempDir()
-	kv, _ := Open(NewDefaultConfiguration().WithNoLog().WithBaseDir(dir))
+	kv, _ := Open(NewConfigurationNoCompaction().WithBaseDir(dir).WithCheckpointSize(16))
 
-	// Put 100 key-value pairs.
-	for i := range 100 {
+	count := 20
+	// Put key-value pairs.
+	for i := range count {
 		kv.Put([]byte(fmt.Sprintf("key-%d", i)), []byte(fmt.Sprintf("value-%d", i)))
 	}
 
@@ -158,11 +223,11 @@ func TestRecoveryWithCorruptedSparseIndexFile(t *testing.T) {
 	os.Truncate(sparseIndexFilePath, stat.Size()-1)
 
 	// The database should be recovered from all segments and WALs.
-	kv, _ = Open(NewDefaultConfiguration().WithNoLog().WithBaseDir(dir))
+	kv, _ = Open(NewConfigurationNoCompaction().WithBaseDir(dir))
 	defer kv.CloseAndCleanUp()
 
 	// Check if the key-value pairs are recovered.
-	for i := range 100 {
+	for i := range count {
 		value, found := kv.Get([]byte(fmt.Sprintf("key-%d", i)))
 		assert.True(t, found)
 		assert.Equal(t, []byte(fmt.Sprintf("value-%d", i)), value)
@@ -171,7 +236,7 @@ func TestRecoveryWithCorruptedSparseIndexFile(t *testing.T) {
 
 func TestRecoveryWithCorruptedCheckpoint(t *testing.T) {
 	dir := t.TempDir()
-	kv, err := Open(NewDefaultConfiguration().WithNoLog().WithBaseDir(dir))
+	kv, err := Open(NewConfigurationNoCompaction().WithBaseDir(dir))
 	if err != nil {
 		t.Fatalf("Error creating KVStore: %v", err)
 	}
@@ -189,7 +254,7 @@ func TestRecoveryWithCorruptedCheckpoint(t *testing.T) {
 	os.Truncate(checkpointFilePath, 0)
 
 	// The database should be recovered from all segments and WALs.
-	kv, err = Open(NewDefaultConfiguration().WithNoLog().WithBaseDir(dir))
+	kv, err = Open(NewConfigurationNoCompaction().WithBaseDir(dir))
 	defer kv.CloseAndCleanUp()
 	if err != nil {
 		t.Fatalf("Error recovering KVStore: %v", err)

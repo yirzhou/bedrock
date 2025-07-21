@@ -1,4 +1,4 @@
-package db
+package bedrock
 
 import (
 	"bytes"
@@ -114,6 +114,10 @@ func (m *MemState) Get(key []byte) ([]byte, bool) {
 		return nil, false
 	}
 	return value, true
+}
+
+func (m *MemState) Size() int64 {
+	return int64(len(m.state))
 }
 
 func (m *MemState) Put(key, value []byte) error {

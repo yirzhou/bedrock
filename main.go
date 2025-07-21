@@ -5,7 +5,7 @@ import (
 	"log"
 	"os"
 	"strconv"
-	"wal/db"
+	"wal/bedrock"
 )
 
 func main() {
@@ -21,8 +21,8 @@ func main() {
 		return
 	}
 
-	dbConfig := db.NewDefaultConfiguration().WithBaseDir(dbDir).WithCheckpointSize(checkpointSize)
-	kv, err := db.Open(dbConfig)
+	dbConfig := bedrock.NewDefaultConfiguration().WithBaseDir(dbDir).WithCheckpointSize(checkpointSize)
+	kv, err := bedrock.Open(dbConfig)
 	if err != nil {
 		log.Println("Error creating KVStore:", err)
 		return
@@ -38,11 +38,4 @@ func main() {
 	// kv.Put([]byte("color"), []byte(""))
 	// kv.Put([]byte("key-1"), []byte("some utf-8 chars ✨ or binary data \x00\x01\x02"))
 
-	for i := 0; i < 100; i++ {
-		value, err := kv.Get([]byte(fmt.Sprintf("key-%d", i)))
-		if err != nil {
-			log.Printf("Error getting key-%d: %v\n", i, err)
-		}
-		log.Printf("kv.Get(\"key-%d\"): %v\n", i, string(value))
-	}
 }

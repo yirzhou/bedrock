@@ -1,4 +1,4 @@
-package db
+package bedrock
 
 import (
 	"encoding/binary"
@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"time"
-	"wal/lib"
 )
 
 // RollToNewSegment rolls to a new segment.
@@ -68,7 +67,7 @@ func (kv *KVStore) doCheckpoint() error {
 	segmentFilePath := kv.getSegmentFilePath(segmentID)
 
 	// 3. Append a special CHECKPOINT record to the WAL.
-	kv.wal.Append([]byte(lib.CHECKPOINT), []byte(segmentFilePath))
+	// kv.wal.Append([]byte(lib.CHECKPOINT), []byte(segmentFilePath))
 
 	// 4. Persist the memtable to a new segment file.
 	minKey, maxKey, err := kv.memState.Flush(segmentFilePath)

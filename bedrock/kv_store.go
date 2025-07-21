@@ -1,4 +1,4 @@
-package db
+package bedrock
 
 import (
 	"bytes"
@@ -150,6 +150,11 @@ func Open(config *Configuration) (*KVStore, error) {
 		go kv.compactionLoop()
 	}
 	return kv, nil
+}
+
+// NewTransaction creates a new transaction.
+func (kv *KVStore) NewTransaction() *Transaction {
+	return NewTransaction(kv)
 }
 
 // GetCurrentSegmentIDSafe returns the ID of the current segment.
@@ -305,7 +310,17 @@ func (kv *KVStore) getInternal(key []byte) ([]byte, bool) {
 }
 
 // Get returns the value for a given key. The value is nil if the key is not found.
+// It creates a new transaction and commits it.
+// It is a wrapper around Transaction.Get.
 func (kv *KVStore) Get(key []byte) ([]byte, bool) {
+	txn := kv.NewTransaction()
+	value, found := txn.Get(key)
+	txn.Commit()
+	return value, found
+}
+
+// get returns the value for a given key. The value is nil if the key is not found.
+func (kv *KVStore) get(key []byte) ([]byte, bool) {
 	kv.lock.RLock()
 	defer kv.lock.RUnlock()
 	value, found := kv.memState.Get(key)
@@ -329,7 +344,20 @@ func (kv *KVStore) Get(key []byte) ([]byte, bool) {
 }
 
 // Put writes a key-value pair to the KVStore.
+// It creates a new transaction and commits it.
+// It is a wrapper around Transaction.Put.
 func (kv *KVStore) Put(key, value []byte) error {
+	txn := kv.NewTransaction()
+	txn.Put(key, value)
+	txn.Commit()
+	return nil
+}
+
+// Deprecated: Use Put instead.
+//
+// Warning: Directly calling this method is a blind write.
+// Put writes a key-value pair to the KVStore.
+func (kv *KVStore) PutV1(key, value []byte) error {
 	// Makes sure that the key and value are not nil.
 	if key == nil || value == nil || bytes.Equal(key, lib.CHECKPOINT) || bytes.Equal(value, lib.TOMBSTONE) {
 		log.Printf("Put: Invalid key or value: %s, %s\n", string(key), string(value))
@@ -342,7 +370,6 @@ func (kv *KVStore) Put(key, value []byte) error {
 func (kv *KVStore) putInternal(key, value []byte) error {
 	kv.lock.Lock()
 	defer kv.lock.Unlock()
-
 	// 1. Write to WAL
 	walErr := kv.wal.Append(key, value)
 

@@ -1,4 +1,4 @@
-package db
+package bedrock
 
 import (
 	"encoding/binary"
@@ -32,18 +32,26 @@ func PreCreateDirectories(config *Configuration) error {
 	return nil
 }
 
+// emptyLevels returns an empty levels slice.
+func emptyLevels() [][]SegmentMetadata {
+	levels := make([][]SegmentMetadata, 1)
+	levels[0] = make([]SegmentMetadata, 0)
+	return levels
+}
+
 // tryRecoverFromCurrentFile tries to recover the last segment ID from the CURRENT file.
 func tryRecoverFromCurrentFile(currentFilePath string) ([][]SegmentMetadata, uint64, error) {
 	// Check if the CURRENT file exists
 	if _, err := os.Stat(currentFilePath); os.IsNotExist(err) {
 		log.Println("tryRecoverFromCurrentFile: CURRENT file does not exist")
-		return nil, 0, err
+		// Return an empty levels slice.
+		return emptyLevels(), 0, err
 	}
 	// Read the CURRENT file
 	content, err := os.ReadFile(currentFilePath)
 	if err != nil {
 		log.Println("tryRecoverFromCurrentFile: Error reading CURRENT file:", err)
-		return nil, 0, err
+		return emptyLevels(), 0, err
 	}
 	// Get the content of the CURRENT file
 	checksumBytes := make([]byte, 4)
@@ -54,7 +62,7 @@ func tryRecoverFromCurrentFile(currentFilePath string) ([][]SegmentMetadata, uin
 	// Check if the checksum is correct
 	if checksum != computedChecksum {
 		log.Println("tryRecoverFromCurrentFile: Bad checksum")
-		return nil, 0, lib.ErrBadChecksum
+		return emptyLevels(), 0, lib.ErrBadChecksum
 	}
 
 	// Get the manifest file path
@@ -64,13 +72,13 @@ func tryRecoverFromCurrentFile(currentFilePath string) ([][]SegmentMetadata, uin
 	segmentID, err := GetSegmentIDFromManifestFileName(manifestFileName)
 	if err != nil {
 		log.Println("tryRecoverFromCurrentFile: Error getting segment ID from manifest file:", err)
-		return nil, 0, err
+		return emptyLevels(), 0, err
 	}
 	// Read the manifest file and recover the levels layout
 	manifestFile, err := os.Open(manifestFilePath)
 	if err != nil {
 		log.Println("tryRecoverFromCurrentFile: Error opening manifest file:", err)
-		return nil, 0, err
+		return emptyLevels(), 0, err
 	}
 	defer manifestFile.Close()
 	// Read the manifest file and recover the levels layout
@@ -86,7 +94,7 @@ func tryRecoverFromCurrentFile(currentFilePath string) ([][]SegmentMetadata, uin
 				break
 			}
 			log.Println("tryRecoverFromCurrentFile: Error reading segment metadata:", err)
-			return nil, 0, err
+			return emptyLevels(), 0, err
 		}
 		segmentMetadataList = append(segmentMetadataList, *segmentMetadata)
 	}
@@ -245,7 +253,7 @@ func recoverFromWALFile(reader *os.File, memState *MemState, isLastWal bool) (ui
 			return 0, err
 		}
 
-		record, err := recoverNextRecord(reader)
+		record, err := recoverNextRecordV2(reader)
 		// Check the current offset of the reader.
 		if err != nil {
 			// If we get an End-Of-File error, it's a clean stop.
@@ -273,7 +281,14 @@ func recoverFromWALFile(reader *os.File, memState *MemState, isLastWal bool) (ui
 
 		lastSequenceNum = record.SequenceNum
 		// Update the in-memory state.
-		memState.Put(record.Key, record.Value)
+		ops, err := record.GetOps()
+		if err != nil {
+			log.Println("Error getting operations from log record:", err)
+			return 0, err
+		}
+		for _, op := range ops {
+			memState.Put(op.Key, op.Value)
+		}
 	}
 
 	if isLastWal {
