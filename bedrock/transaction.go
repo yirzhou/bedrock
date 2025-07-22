@@ -153,12 +153,14 @@ func (txn *Transaction) Commit() error {
 	if walErr == lib.ErrCheckpointNeeded || txn.store.memState.Size() >= txn.store.config.GetMemtableSizeThreshold() {
 		// TODO: the checkpointing can also be done in the background.
 		txn.store.checkpointNeeded = true
-		err := txn.store.doCheckpoint()
-		if err != nil {
-			// If the checkpoint fails, it's a serious issue, but the transaction
-			// itself is already durably committed to the WAL. We log the error
-			// and allow the commit to succeed. The next background run will retry.
-			log.Println("Error performing checkpoint:", err)
+		if txn.store.config.EnableSyncCheckpoint && txn.store.config.EnableCheckpoint {
+			err := txn.store.doCheckpoint()
+			if err != nil {
+				// If the checkpoint fails, it's a serious issue, but the transaction
+				// itself is already durably committed to the WAL. We log the error
+				// and allow the commit to succeed. The next background run will retry.
+				log.Println("Error performing checkpoint:", err)
+			}
 		}
 	}
 

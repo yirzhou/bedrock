@@ -12,6 +12,8 @@ type Configuration struct {
 	SegmentFileSizeThresholdLX int64
 	CompactionIntervalMs       uint64
 	MemtableSizeThreshold      int64
+	EnableSyncCheckpoint       bool
+	EnableCheckpoint           bool
 }
 
 // NewDefaultConfiguration returns the default DB configuration.
@@ -22,7 +24,19 @@ func NewDefaultConfiguration() *Configuration {
 		SegmentFileSizeThresholdLX: 1024,
 		CompactionIntervalMs:       20,  // 20ms
 		MemtableSizeThreshold:      128, // 128 keys
+		EnableSyncCheckpoint:       true,
+		EnableCheckpoint:           true,
 	}
+}
+
+func (c *Configuration) WithEnableCheckpoint(enable bool) *Configuration {
+	c.EnableCheckpoint = enable
+	return c
+}
+
+func (c *Configuration) WithEnableSyncCheckpoint(enable bool) *Configuration {
+	c.EnableSyncCheckpoint = enable
+	return c
 }
 
 func (c *Configuration) WithLog() *Configuration {

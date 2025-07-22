@@ -128,7 +128,7 @@ func TestFlushManifestFileWithLevels(t *testing.T) {
 
 // This test may take a while to run.
 func TestPerformMerge(t *testing.T) {
-	config := NewDefaultConfiguration().WithNoLog().WithBaseDir(t.TempDir()).WithSegmentFileSizeThresholdLX(32).WithMemtableSizeThreshold(4).WithCompactionIntervalMs(0)
+	config := NewDefaultConfiguration().WithNoLog().WithBaseDir(t.TempDir()).WithSegmentFileSizeThresholdLX(32).WithMemtableSizeThreshold(4).WithCompactionIntervalMs(0).WithEnableCheckpoint(false)
 	kv, err := Open(config)
 	assert.NoError(t, err)
 	defer kv.CloseAndCleanUp()

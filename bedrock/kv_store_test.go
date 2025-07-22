@@ -127,11 +127,13 @@ func TestRecoveryNormalBlindWrites(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error creating KVStore: %v", err)
 	}
-	count := 20
+	count := 1024
 	// Put key-value pairs.
+	txn := kv.BeginTransaction()
 	for i := range count {
-		kv.PutV1([]byte(fmt.Sprintf("key-%d", i)), []byte(fmt.Sprintf("value-%d", i)))
+		txn.Put([]byte(fmt.Sprintf("key-%d", i)), []byte(fmt.Sprintf("value-%d", i)))
 	}
+	txn.Commit()
 
 	// Record the last sequence number and current segment ID.
 	lastSequenceNum := kv.GetLastSequenceNum()
