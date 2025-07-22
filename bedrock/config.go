@@ -10,10 +10,12 @@ type Configuration struct {
 	CheckpointSize             int64
 	BaseDir                    string
 	SegmentFileSizeThresholdLX int64
-	CompactionIntervalMs       uint64
+	MaintenanceIntervalMs      uint64
 	MemtableSizeThreshold      int64
 	EnableSyncCheckpoint       bool
 	EnableCheckpoint           bool
+	EnableCompaction           bool
+	EnableMaintenance          bool
 }
 
 // NewDefaultConfiguration returns the default DB configuration.
@@ -22,11 +24,28 @@ func NewDefaultConfiguration() *Configuration {
 		CheckpointSize:             1024, // 1KiB
 		BaseDir:                    "./db",
 		SegmentFileSizeThresholdLX: 1024,
-		CompactionIntervalMs:       20,  // 20ms
+		MaintenanceIntervalMs:      20,  // 20ms
 		MemtableSizeThreshold:      128, // 128 keys
 		EnableSyncCheckpoint:       true,
 		EnableCheckpoint:           true,
+		EnableCompaction:           true,
+		EnableMaintenance:          true,
 	}
+}
+
+func (c *Configuration) WithEnableMaintenance(enable bool) *Configuration {
+	c.EnableMaintenance = enable
+	return c
+}
+
+func (c *Configuration) WithEnableCompaction(enable bool) *Configuration {
+	c.EnableCompaction = enable
+	return c
+}
+
+func (c *Configuration) WithMaintenanceIntervalMs(intervalMs uint64) *Configuration {
+	c.MaintenanceIntervalMs = intervalMs
+	return c
 }
 
 func (c *Configuration) WithEnableCheckpoint(enable bool) *Configuration {
@@ -55,15 +74,9 @@ func (c *Configuration) WithBaseDir(dir string) *Configuration {
 	return c
 }
 
-// WithCompactionIntervalMs sets the compaction interval for the DB.
-func (c *Configuration) WithCompactionIntervalMs(intervalMs uint64) *Configuration {
-	c.CompactionIntervalMs = intervalMs
-	return c
-}
-
 // GetCompactionIntervalMs returns the compaction interval for the DB.
-func (c *Configuration) GetCompactionIntervalMs() uint64 {
-	return c.CompactionIntervalMs
+func (c *Configuration) GetMaintenanceIntervalMs() uint64 {
+	return c.MaintenanceIntervalMs
 }
 
 // WithMemtableSizeThreshold sets the memtable size threshold for the DB.

@@ -154,7 +154,7 @@ func (txn *Transaction) Commit() error {
 		// TODO: the checkpointing can also be done in the background.
 		txn.store.checkpointNeeded = true
 		if txn.store.config.EnableSyncCheckpoint && txn.store.config.EnableCheckpoint {
-			err := txn.store.doCheckpoint()
+			err := txn.store.doCheckpoint(true)
 			if err != nil {
 				// If the checkpoint fails, it's a serious issue, but the transaction
 				// itself is already durably committed to the WAL. We log the error

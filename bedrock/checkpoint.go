@@ -14,20 +14,21 @@ import (
 // RollToNewSegment rolls to a new segment.
 // It creates a new WAL file and updates the WAL object.
 // It also updates the current segment ID and the last sequence number.
-func (kv *KVStore) RollToNewSegment() error {
-	segmentID := kv.GetCurrentSegmentIDUnsafe() + 1
+func (kv *KVStore) RollToNewSegment() (uint64, error) {
+	currentSegmentID := kv.GetCurrentSegmentIDUnsafe()
+	segmentID := currentSegmentID + 1
 	walFileName := getWalFileNameFromSegmentID(segmentID)
 	walFilePath := filepath.Join(kv.config.GetBaseDir(), logsDir, walFileName)
 	walFile, err := os.OpenFile(walFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		log.Println("Error opening WAL file:", err)
-		return err
+		return 0, err
 	}
 	// Close the current file
 	err = kv.wal.activeFile.Close()
 	if err != nil {
 		log.Println("Error closing current WAL file:", err)
-		return err
+		return 0, err
 	}
 	kv.wal.activeFile = walFile
 	// kv.wal.activeSegmentID = segmentID
@@ -36,7 +37,7 @@ func (kv *KVStore) RollToNewSegment() error {
 	// Update the active segment ID.
 	kv.activeSegmentID = segmentID
 
-	return nil
+	return currentSegmentID, nil
 }
 
 // doCheckpoint is the main function that performs a checkpoint.
@@ -44,7 +45,27 @@ func (kv *KVStore) RollToNewSegment() error {
 // and writes the SSTable to the segment file.
 // It also appends a special CHECKPOINT record to the WAL and updates the checkpoint file.
 // Finally, it removes all old WAL files.
-func (kv *KVStore) doCheckpoint() error {
+// If locked is true, it means that the caller has already acquired the lock.
+func (kv *KVStore) doCheckpoint(locked bool) error {
+	if !locked {
+		kv.lock.Lock()
+	}
+
+	// 1. "Freeze and Swap".
+	memTableToFlush := kv.memState
+	sparseIndexToFlush := kv.memState.sparseIndexMap
+	if memTableToFlush.Size() == 0 {
+		// nothing to flush.
+		if !locked {
+			kv.lock.Unlock()
+		}
+		return nil
+	}
+	// Save the sparse index map to the new memtable.
+	kv.memState = NewMemState()
+	kv.memState.sparseIndexMap = sparseIndexToFlush
+	kv.checkpointNeeded = false
+
 	// Create the checkpoint directory if it doesn't exist.
 	checkpointDir := filepath.Join(kv.config.GetBaseDir(), checkpointDir)
 	err := os.MkdirAll(checkpointDir, 0755)
@@ -53,30 +74,59 @@ func (kv *KVStore) doCheckpoint() error {
 		return err
 	}
 
-	segmentID := kv.GetCurrentSegmentIDUnsafe()
-
-	// 2. Roll to a new segment.
-	err = kv.RollToNewSegment()
+	// 2. Roll to a new WAL segment. This gives us the ID for our new data segment.
+	// The old WAL is now closed and ready to be archived/deleted.
+	segmentID, err := kv.RollToNewSegment()
 	if err != nil {
 		log.Println("Error rolling to a new segment:", err)
+		if !locked {
+			kv.lock.Unlock()
+		}
 		return err
 	}
 
-	// 1. Persist the memtable to a new segment file.
+	// We are done with the critical section. The database can now accept new writes
+	// into the new, empty memtable and the new WAL segment.
+	if !locked {
+		kv.lock.Unlock()
+	}
+
+	log.Printf("Checkpoint triggered for WAL segment %d. Flushing memtable in background.", segmentID)
+
+	// --- Phase 2: I/O Work (No Lock Held) ---
+	// This is the slow part. We are working with the 'memtableToFlush' which is
+	// now immutable and no longer part of the live database state.
+
+	// 3. Persist the memtable to a new segment file.
 	segmentFilePath := kv.getSegmentFilePath(segmentID)
-
-	// 3. Append a special CHECKPOINT record to the WAL.
-	// kv.wal.Append([]byte(lib.CHECKPOINT), []byte(segmentFilePath))
-
-	// 4. Persist the memtable to a new segment file.
-	minKey, maxKey, err := kv.memState.Flush(segmentFilePath)
+	minKey, maxKey, err := memTableToFlush.Flush(segmentFilePath)
 	if err != nil {
 		log.Println("Error flushing memtable to segment file:", err)
 		return err
 	}
 
+	// 5. Persist the sparse index to a new sparse index file.
+	sparseIndexFilePath := kv.getSparseIndexFilePath(segmentID)
+	err = kv.memState.FlushSparseIndex(sparseIndexFilePath)
+	if err != nil {
+		log.Println("Error flushing sparse index to sparse index file:", err)
+		return err
+	}
+
+	// --- Phase 3: Commit (Lock Held) ---
+	// Now that the new files are durably on disk, we re-acquire the lock to
+	// atomically update the database's metadata. This is a fast operation.
+	if !locked {
+		kv.lock.Lock()
+	}
+	defer func() {
+		if !locked {
+			kv.lock.Unlock()
+		}
+	}()
+
 	// Initialize the first level if it's not already initialized.
-	if len(kv.levels) < 1 {
+	if len(kv.levels) == 0 {
 		kv.levels = make([][]SegmentMetadata, 1)
 	}
 	// Add the segment file to Level 0.
@@ -87,14 +137,6 @@ func (kv *KVStore) doCheckpoint() error {
 		maxKey:   maxKey,
 		filePath: segmentFilePath,
 	})
-
-	// 5. Persist the sparse index to a new sparse index file.
-	sparseIndexFilePath := kv.getSparseIndexFilePath(segmentID)
-	err = kv.memState.FlushSparseIndex(sparseIndexFilePath)
-	if err != nil {
-		log.Println("Error flushing sparse index to sparse index file:", err)
-		return err
-	}
 
 	// 6. Atomically update a CHECKPOINT file which records the last segment file path.
 	manifestFilePath, err := kv.flushManifestFile(segmentID)
@@ -114,10 +156,7 @@ func (kv *KVStore) doCheckpoint() error {
 		log.Println("Error cleaning up WAL files:", err)
 		return err
 	}
-	// Clear the memtable
-	kv.memState.ClearState()
 
-	// TODO: 8. Remove all old checkpoints via compaction.
 	return nil
 }
 

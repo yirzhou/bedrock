@@ -11,7 +11,7 @@ import (
 
 func TestOpen(t *testing.T) {
 	dir := t.TempDir()
-	kv, err := Open(NewConfigurationNoCompaction().WithBaseDir(dir))
+	kv, err := Open(NewConfigurationNoMaintenance().WithBaseDir(dir))
 	defer kv.CloseAndCleanUp()
 	if err != nil {
 		t.Fatalf("Error creating KVStore: %v", err)
@@ -20,7 +20,7 @@ func TestOpen(t *testing.T) {
 
 func TestPutGet(t *testing.T) {
 	dir := t.TempDir()
-	kv, err := Open(NewConfigurationNoCompaction().WithBaseDir(dir))
+	kv, err := Open(NewConfigurationNoMaintenance().WithBaseDir(dir))
 	defer kv.CloseAndCleanUp()
 	if err != nil {
 		t.Fatalf("Error creating KVStore: %v", err)
@@ -47,7 +47,7 @@ func TestPutGet(t *testing.T) {
 
 func TestRecoveryNormalWithBatchTransactions(t *testing.T) {
 	dir := t.TempDir()
-	kv, err := Open(NewConfigurationNoCompaction().WithBaseDir(dir))
+	kv, err := Open(NewConfigurationNoMaintenance().WithBaseDir(dir))
 	if err != nil {
 		t.Fatalf("Error creating KVStore: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestRecoveryNormalWithBatchTransactions(t *testing.T) {
 	// Close the KVStore.
 	kv.Close()
 	// Recover the KVStore.
-	kv, err = Open(NewConfigurationNoCompaction().WithBaseDir(dir))
+	kv, err = Open(NewConfigurationNoMaintenance().WithBaseDir(dir))
 	if err != nil {
 		t.Fatalf("Error recovering KVStore: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestRecoveryNormalWithBatchTransactions(t *testing.T) {
 
 func TestRecoveryNormalWithIndividualTransactions(t *testing.T) {
 	dir := t.TempDir()
-	kv, err := Open(NewConfigurationNoCompaction().WithBaseDir(dir))
+	kv, err := Open(NewConfigurationNoMaintenance().WithBaseDir(dir))
 	if err != nil {
 		t.Fatalf("Error creating KVStore: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestRecoveryNormalWithIndividualTransactions(t *testing.T) {
 	// Close the KVStore.
 	kv.Close()
 	// Recover the KVStore.
-	kv, err = Open(NewConfigurationNoCompaction().WithBaseDir(dir))
+	kv, err = Open(NewConfigurationNoMaintenance().WithBaseDir(dir))
 	if err != nil {
 		t.Fatalf("Error recovering KVStore: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestRecoveryNormalWithIndividualTransactions(t *testing.T) {
 
 func TestRecoveryNormalBlindWrites(t *testing.T) {
 	dir := t.TempDir()
-	kv, err := Open(NewConfigurationNoCompaction().WithBaseDir(dir))
+	kv, err := Open(NewConfigurationNoMaintenance().WithBaseDir(dir))
 	if err != nil {
 		t.Fatalf("Error creating KVStore: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestRecoveryNormalBlindWrites(t *testing.T) {
 	// Close the KVStore.
 	kv.Close()
 	// Recover the KVStore.
-	kv, err = Open(NewConfigurationNoCompaction().WithBaseDir(dir))
+	kv, err = Open(NewConfigurationNoMaintenance().WithBaseDir(dir))
 	if err != nil {
 		t.Fatalf("Error recovering KVStore: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestRecoveryNormalBlindWrites(t *testing.T) {
 func TestRecoveryWithCorruptedWALFile(t *testing.T) {
 	dir := t.TempDir()
 	count := 7
-	config := NewConfigurationNoCompaction().WithBaseDir(dir).WithMemtableSizeThreshold(int64(count + 1)).WithCheckpointSize(1024 * 1024)
+	config := NewConfigurationNoMaintenance().WithBaseDir(dir).WithMemtableSizeThreshold(int64(count + 1)).WithCheckpointSize(1024 * 1024)
 	kv, err := Open(config)
 	if err != nil {
 		t.Fatalf("Error creating KVStore: %v", err)
@@ -207,7 +207,7 @@ func TestRecoveryWithCorruptedWALFile(t *testing.T) {
 
 func TestRecoveryWithCorruptedSparseIndexFile(t *testing.T) {
 	dir := t.TempDir()
-	config := NewConfigurationNoCompaction().WithBaseDir(dir).WithCheckpointSize(16)
+	config := NewConfigurationNoMaintenance().WithBaseDir(dir).WithCheckpointSize(16)
 	kv, _ := Open(config)
 
 	count := 1024
@@ -243,7 +243,7 @@ func TestRecoveryWithCorruptedSparseIndexFile(t *testing.T) {
 
 func TestRecoveryWithCorruptedCheckpoint(t *testing.T) {
 	dir := t.TempDir()
-	kv, err := Open(NewConfigurationNoCompaction().WithBaseDir(dir))
+	kv, err := Open(NewConfigurationNoMaintenance().WithBaseDir(dir))
 	if err != nil {
 		t.Fatalf("Error creating KVStore: %v", err)
 	}
@@ -261,7 +261,7 @@ func TestRecoveryWithCorruptedCheckpoint(t *testing.T) {
 	os.Truncate(checkpointFilePath, 0)
 
 	// The database should be recovered from all segments and WALs.
-	kv, err = Open(NewConfigurationNoCompaction().WithBaseDir(dir))
+	kv, err = Open(NewConfigurationNoMaintenance().WithBaseDir(dir))
 	defer kv.CloseAndCleanUp()
 	if err != nil {
 		t.Fatalf("Error recovering KVStore: %v", err)
@@ -309,7 +309,7 @@ func TestRecoveryNormalWithVariousCheckpointSizes(t *testing.T) {
 
 func TestDeleteBatch(t *testing.T) {
 	dir := t.TempDir()
-	kv, _ := Open(NewConfigurationNoCompaction().WithNoLog().WithBaseDir(dir))
+	kv, _ := Open(NewConfigurationNoMaintenance().WithNoLog().WithBaseDir(dir))
 	defer kv.CloseAndCleanUp()
 
 	count := 1024

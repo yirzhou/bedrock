@@ -59,30 +59,6 @@ type KVStore struct {
 	checkpointNeeded bool
 }
 
-// compactionLoop is the main loop for the compaction process.
-// It runs in the background and checks for work every 30 seconds.
-// It also listens to the shutdownChan and stops when it receives a signal.
-func (s *KVStore) compactionLoop() {
-	// A Ticker is more efficient than time.Sleep for periodic tasks.
-	ticker := time.NewTicker(time.Duration(s.config.GetCompactionIntervalMs()) * time.Millisecond) // Check every 30 seconds
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			// The ticker fired, it's time to check for work.
-			log.Println("Background check for compaction work...")
-			if err := s.doCompaction(); err != nil {
-				log.Printf("Error during background compaction: %v", err)
-			}
-		case <-s.shutdownChan:
-			// We received a shutdown signal, exit the loop.
-			log.Println("Stopping compaction loop.")
-			return
-		}
-	}
-}
-
 // GetSegmentIDFromManifestFileName returns the segment ID from a manifest file name.
 func GetSegmentIDFromManifestFileName(fileName string) (uint64, error) {
 	segmentID, err := strconv.ParseUint(strings.TrimPrefix(fileName, manifestFilePrefix), 10, 64)
@@ -112,6 +88,11 @@ func GetSegmentIDFromManifestFileName(fileName string) (uint64, error) {
 // TODOs:
 // 1. Add a compaction job that removes old checkpoints and sparse index files.
 func Open(config *Configuration) (*KVStore, error) {
+	// Validate the configuration.
+	if config.EnableMaintenance && config.MaintenanceIntervalMs <= 0 {
+		return nil, errors.New("maintenance interval must be greater than 0")
+	}
+
 	lastTimestamp := time.Now()
 	err := PreCreateDirectories(config)
 	if err != nil {
@@ -154,10 +135,11 @@ func Open(config *Configuration) (*KVStore, error) {
 		lockManager:      NewLockManager(),
 		checkpointNeeded: false,
 	}
-	// Start the compaction loop.
-	if config.GetCompactionIntervalMs() > 0 {
-		go kv.compactionLoop()
+	// Start the maintenance loop.
+	if config.EnableMaintenance {
+		go kv.maintenanceLoop()
 	}
+
 	return kv, nil
 }
 
@@ -398,7 +380,7 @@ func (kv *KVStore) putInternal(key, value []byte) error {
 	// 4. Check if the WAL is ready to be checkpointed
 	if walErr == lib.ErrCheckpointNeeded {
 		// checkpoint the memtable
-		err := kv.doCheckpoint()
+		err := kv.doCheckpoint(true)
 		if err != nil {
 			log.Println("Error checkpointing:", err)
 			return err

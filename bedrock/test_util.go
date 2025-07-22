@@ -9,9 +9,8 @@ import (
 	"time"
 )
 
-// NewConfigurationNoCompaction returns a new configuration for the KVStore with no logging, no compaction, and a memtable size threshold of 32.
-func NewConfigurationNoCompaction() *Configuration {
-	return NewDefaultConfiguration().WithNoLog().WithCompactionIntervalMs(0).WithMemtableSizeThreshold(32)
+func NewConfigurationNoMaintenance() *Configuration {
+	return NewDefaultConfiguration().WithNoLog().WithMaintenanceIntervalMs(0).WithMemtableSizeThreshold(32).WithEnableMaintenance(false)
 }
 
 // GenerateRandomString generates a random string of a given length.

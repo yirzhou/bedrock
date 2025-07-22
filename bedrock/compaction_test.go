@@ -53,7 +53,7 @@ func TestGetNewLevels(t *testing.T) {
 
 func TestDeleteOldSegmentsAndIndexes(t *testing.T) {
 	tempDir := t.TempDir()
-	config := NewDefaultConfiguration().WithNoLog().WithBaseDir(tempDir)
+	config := NewConfigurationNoMaintenance().WithBaseDir(tempDir)
 	kv, err := Open(config)
 	assert.NoError(t, err)
 
@@ -128,7 +128,7 @@ func TestFlushManifestFileWithLevels(t *testing.T) {
 
 // This test may take a while to run.
 func TestPerformMerge(t *testing.T) {
-	config := NewDefaultConfiguration().WithNoLog().WithBaseDir(t.TempDir()).WithSegmentFileSizeThresholdLX(32).WithMemtableSizeThreshold(4).WithCompactionIntervalMs(0).WithEnableCheckpoint(false)
+	config := NewConfigurationNoMaintenance().WithNoLog().WithBaseDir(t.TempDir()).WithSegmentFileSizeThresholdLX(32).WithMemtableSizeThreshold(4)
 	kv, err := Open(config)
 	assert.NoError(t, err)
 	defer kv.CloseAndCleanUp()
@@ -156,7 +156,7 @@ func TestPerformMerge(t *testing.T) {
 	txn.Commit()
 
 	// Force a checkpoint so that the sparse indexes are updated.
-	err = kv.doCheckpoint()
+	err = kv.doCheckpoint(true)
 	assert.NoError(t, err)
 
 	compactionPlan := kv.getNextCompactionPlan()
@@ -218,7 +218,7 @@ func TestPerformMerge(t *testing.T) {
 
 // TestDoCompaction tests that the compaction works correctly. It also tests the new recovery logic.
 func TestDoCompaction(t *testing.T) {
-	config := NewDefaultConfiguration().WithNoLog().WithBaseDir(t.TempDir()).WithSegmentFileSizeThresholdLX(128).WithCheckpointSize(128).WithCompactionIntervalMs(0)
+	config := NewConfigurationNoMaintenance().WithNoLog().WithBaseDir(t.TempDir()).WithSegmentFileSizeThresholdLX(128).WithCheckpointSize(128)
 	kv, err := Open(config)
 	assert.NoError(t, err)
 

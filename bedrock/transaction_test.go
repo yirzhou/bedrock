@@ -11,7 +11,7 @@ import (
 
 func TestSuccessfulCommit(t *testing.T) {
 	dir := t.TempDir()
-	kv, err := Open(NewConfigurationNoCompaction().WithBaseDir(dir))
+	kv, err := Open(NewConfigurationNoMaintenance().WithBaseDir(dir))
 	if err != nil {
 		t.Fatalf("Error creating KVStore: %v", err)
 	}
@@ -31,7 +31,7 @@ func TestSuccessfulCommit(t *testing.T) {
 
 func TestSuccessfulRollback(t *testing.T) {
 	dir := t.TempDir()
-	kv, err := Open(NewConfigurationNoCompaction().WithBaseDir(dir))
+	kv, err := Open(NewConfigurationNoMaintenance().WithBaseDir(dir))
 	if err != nil {
 		t.Fatalf("Error creating KVStore: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestSuccessfulRollback(t *testing.T) {
 
 func TestGetAfterPut(t *testing.T) {
 	dir := t.TempDir()
-	kv, err := Open(NewConfigurationNoCompaction().WithBaseDir(dir))
+	kv, err := Open(NewConfigurationNoMaintenance().WithBaseDir(dir))
 	if err != nil {
 		t.Fatalf("Error creating KVStore: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestGetAfterPut(t *testing.T) {
 
 func TestIsolationTwoGoroutines(t *testing.T) {
 	dir := t.TempDir()
-	kv, err := Open(NewConfigurationNoCompaction().WithBaseDir(dir))
+	kv, err := Open(NewConfigurationNoMaintenance().WithBaseDir(dir))
 	if err != nil {
 		t.Fatalf("Error creating KVStore: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestIsolationTwoGoroutines(t *testing.T) {
 
 func TestWriteWriteConflict(t *testing.T) {
 	dir := t.TempDir()
-	kv, err := Open(NewConfigurationNoCompaction().WithBaseDir(dir))
+	kv, err := Open(NewConfigurationNoMaintenance().WithBaseDir(dir))
 	if err != nil {
 		t.Fatalf("Error creating KVStore: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestWriteWriteConflict(t *testing.T) {
 
 func TestNonConflictingWrites(t *testing.T) {
 	dir := t.TempDir()
-	kv, err := Open(NewConfigurationNoCompaction().WithBaseDir(dir))
+	kv, err := Open(NewConfigurationNoMaintenance().WithBaseDir(dir))
 	if err != nil {
 		t.Fatalf("Error creating KVStore: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestNonConflictingWrites(t *testing.T) {
 
 func TestCommitAndCrash(t *testing.T) {
 	dir := t.TempDir()
-	config := NewConfigurationNoCompaction().WithBaseDir(dir)
+	config := NewConfigurationNoMaintenance().WithBaseDir(dir)
 	kv, err := Open(config)
 	if err != nil {
 		t.Fatalf("Error creating KVStore: %v", err)
