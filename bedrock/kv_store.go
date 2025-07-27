@@ -59,6 +59,23 @@ type KVStore struct {
 	checkpointNeeded bool
 }
 
+// NewIterator creates an iterator for range queries.
+func (kv *KVStore) NewIterator() Iterator {
+	iterators := make([]Iterator, 0, len(kv.levels))
+	for _, level := range kv.levels {
+		for _, segment := range level {
+			sparseIndex := kv.memState.GetSparseIndex(segment.id)
+			iter, err := NewSegmentIterator(segment.filePath, sparseIndex)
+			if err != nil {
+				log.Println("NewIterator: Error creating segment iterator:", err)
+				continue
+			}
+			iterators = append(iterators, iter)
+		}
+	}
+	return NewMergingIterator(kv.memState.NewIterator(), iterators)
+}
+
 // GetSegmentIDFromManifestFileName returns the segment ID from a manifest file name.
 func GetSegmentIDFromManifestFileName(fileName string) (uint64, error) {
 	segmentID, err := strconv.ParseUint(strings.TrimPrefix(fileName, manifestFilePrefix), 10, 64)

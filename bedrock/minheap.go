@@ -16,7 +16,7 @@ type MinHeap []*MinHeapRecord
 
 func (h MinHeap) Len() int { return len(h) }
 func (h MinHeap) Less(i, j int) bool {
-	if bytes.Compare(h[i].Record.Key, h[j].Record.Key) == 0 {
+	if bytes.Equal(h[i].Record.Key, h[j].Record.Key) {
 		segmentID1, _ := GetSegmentIDFromSegmentFilePath(h[i].SegmentFilePath)
 		segmentID2, _ := GetSegmentIDFromSegmentFilePath(h[j].SegmentFilePath)
 		return segmentID1 > segmentID2
