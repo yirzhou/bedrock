@@ -388,11 +388,7 @@ func (kv *KVStore) putInternal(key, value []byte) error {
 	}
 
 	// 3. Update Memtable
-	memStateErr := kv.memState.Put(key, value)
-	if memStateErr != nil {
-		log.Println("Error updating Memtable:", memStateErr)
-		return memStateErr
-	}
+	kv.memState.Put(key, value)
 
 	// 4. Check if the WAL is ready to be checkpointed
 	if walErr == lib.ErrCheckpointNeeded {

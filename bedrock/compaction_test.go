@@ -236,13 +236,24 @@ func TestDoCompaction(t *testing.T) {
 	// Also remove some keys.
 	for i := range keyCount {
 		if i%2 == 0 {
-			kv.DeleteV1([]byte(fmt.Sprintf("key%d", i)))
+			kv.Delete([]byte(fmt.Sprintf("key%d", i)))
 			delete(kvMap, fmt.Sprintf("key%d", i))
+		}
+	}
+	for i := range keyCount {
+		value, found := kv.Get([]byte(fmt.Sprintf("key%d", i)))
+		localValue, localFound := kvMap[fmt.Sprintf("key%d", i)]
+		assert.Equal(t, localFound, found)
+		if localFound {
+			assert.Equal(t, localValue, value)
 		}
 	}
 
 	// Do the compaction right now
 	err = kv.doCompaction()
+	assert.NoError(t, err)
+
+	err = kv.doCheckpoint(false)
 	assert.NoError(t, err)
 
 	// Close the KV Store and reopen it.

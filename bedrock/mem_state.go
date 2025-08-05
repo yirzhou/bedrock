@@ -132,9 +132,12 @@ func (m *MemState) Size() int64 {
 	return int64(len(m.state))
 }
 
-func (m *MemState) Put(key, value []byte) error {
+func (m *MemState) Put(key, value []byte) {
 	m.state[string(key)] = value
-	return nil
+}
+
+func (m *MemState) Delete(key []byte) {
+	delete(m.state, string(key))
 }
 
 func (m *MemState) Print() {

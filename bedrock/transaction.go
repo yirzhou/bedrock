@@ -124,7 +124,7 @@ func (txn *Transaction) Commit() error {
 	commitRecord := txn.createCommitRecord()
 
 	// 4. Write to WAL and fsync.
-	walErr := txn.store.wal.AppendTransaction(commitRecord)
+	walErr := txn.store.wal.AppendTransaction(0, commitRecord)
 	if walErr != nil && walErr != lib.ErrCheckpointNeeded {
 		// If the durable write to the WAL fails for any reason other than a
 		// log roll, we cannot proceed. The transaction must be aborted.

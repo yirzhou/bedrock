@@ -7,18 +7,19 @@ import (
 	"wal/lib"
 )
 
-// The new log record format in which the header is 17 bytes: 4 + 8 + 1 + 4 = 17
-// +----------+---------------+-----------+-------------+-----+-------+
-// | Checksum | Sequence Num  | Record Type | Payload Size | Payload |
-// | (4 bytes)|   (8 bytes)   | (1 byte)    |  (4 bytes)   | ...     |
-// +----------+---------------+-----------+-------------+-----+-------+
-// | <----------- Header (17 bytes) -----------------> | <- Payload -> |
+// The new log record format in which the header is 25 bytes: 4 + 8 + 8 + 1 + 4 = 25
+// +----------+---------------+-----------+-----------+-------------+---------+
+// | Checksum | Sequence Num  | Term      | RecordType| PayloadSize | Payload |
+// | (4 bytes)|   (8 bytes)   | (8 bytes) | (1 byte)  |  (4 bytes)  | ...     |
+// +----------+---------------+-----------+-----------+-------------+---------+
+// | <----------- Header (25 bytes) ------------------------------> |         |
 // The record type can be:
 // 0x01 -> Put -- a single, non-transactional write: [KeySize (4B)] [ValueSize (4B)] [Key (Var)] [Value (Var)]
 // 0x02 -> Commit -- [NumOps (4B)] [Op1_KeySize] [Op1_ValueSize] [Op1_Key] [Op1_Value] [Op2_KeySize] ...
 type LogRecordV2 struct {
 	CheckSum    uint32
 	SequenceNum uint64
+	Term        uint64
 	RecordType  byte
 	PayloadSize uint32
 	Payload     []byte
@@ -67,16 +68,18 @@ func GetPayloadForCommit(ops [][]byte) []byte {
 }
 
 // SerializeV2 returns the bytes of the log record.
-func SerializeV2(recordType byte, sequenceNum uint64, payload []byte) []byte {
+func SerializeV2(recordType byte, sequenceNum uint64, term uint64, payload []byte) []byte {
 	// This is a single, non-transactional write.
 	payloadSize := uint32(len(payload))
-	header := make([]byte, 17)
+	header := make([]byte, 25)
 	// Put the sequence number in the header.
 	binary.LittleEndian.PutUint32(header[4:12], uint32(sequenceNum))
+	// Put the term in the header.
+	binary.LittleEndian.PutUint64(header[12:20], term)
 	// Put the record type in the header.
-	header[12] = recordType
+	header[20] = recordType
 	// Put the payload size in the header.
-	binary.LittleEndian.PutUint32(header[13:17], payloadSize)
+	binary.LittleEndian.PutUint32(header[21:25], payloadSize)
 	// Append the payload to the header.
 	header = append(header, payload...)
 	// Calculate the checksum.
@@ -88,7 +91,7 @@ func SerializeV2(recordType byte, sequenceNum uint64, payload []byte) []byte {
 
 // DeserializeV2 deserializes a log record from a byte array.
 func DeserializeV2(data []byte) (LogRecordV2, error) {
-	if len(data) < 17 {
+	if len(data) < 25 {
 		return LogRecordV2{}, fmt.Errorf("log record is too short")
 	}
 
@@ -96,8 +99,9 @@ func DeserializeV2(data []byte) (LogRecordV2, error) {
 	record.CheckSum = binary.LittleEndian.Uint32(data[0:4])
 	record.SequenceNum = binary.LittleEndian.Uint64(data[4:12])
 	record.RecordType = data[12]
-	record.PayloadSize = binary.LittleEndian.Uint32(data[13:17])
-	record.Payload = data[17:]
+	record.Term = binary.LittleEndian.Uint64(data[12:20])
+	record.PayloadSize = binary.LittleEndian.Uint32(data[21:25])
+	record.Payload = data[25:]
 	return record, nil
 }
 

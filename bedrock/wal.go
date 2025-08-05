@@ -11,7 +11,7 @@ import (
 
 const (
 	headerSize    = 20
-	newHeaderSize = 17
+	newHeaderSize = 25
 	checksumSize  = 4
 	// CheckpointSize = 64 * 1024 // 64KiB
 	CheckpointSize = 1024 // 1KiB for testing
@@ -20,7 +20,7 @@ const (
 
 type WAL struct {
 	// Lock is needed because the WAL can be a standalone component used by other components so it must take care of its own concurrency.
-	mu sync.Mutex
+	mu sync.RWMutex
 
 	// The directory where the WAL files are stored.
 	dir string
@@ -33,6 +33,36 @@ type WAL struct {
 
 	// The last sequence number we have written to the active segment.
 	lastSequenceNum uint64
+}
+
+// Deprecated.
+//
+// This function exists for the own Raft implementation.
+// GetEntries returns the entries at the given index.
+func (l *WAL) GetEntries(index uint64) []LogRecordV2 {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return nil
+}
+
+// Deprecated.
+//
+// This function exists for the own Raft implementation.
+// GetTerm returns the term at the given index.
+func (l *WAL) GetTerm(index uint64) uint64 {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return 0
+}
+
+// Deprecated.
+//
+// This function exists for the own Raft implementation.
+// LastIndex returns the last sequence number we have written to the active segment.
+func (l *WAL) LastIndex() uint64 {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.lastSequenceNum
 }
 
 // Deprecated.
@@ -68,7 +98,7 @@ func createLogRecord(sequenceNum uint64, key, value []byte) LogRecord {
 }
 
 // AppendTransaction appends a transaction record to the log.
-func (l *WAL) AppendTransaction(payload []byte) error {
+func (l *WAL) AppendTransaction(term uint64, payload []byte) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -76,7 +106,7 @@ func (l *WAL) AppendTransaction(payload []byte) error {
 	l.lastSequenceNum++
 
 	// 2. Create the record using this new sequence number in binary format.
-	data := SerializeV2(lib.TXN_COMMIT, l.lastSequenceNum, payload)
+	data := SerializeV2(lib.TXN_COMMIT, l.lastSequenceNum, term, payload)
 
 	// 3. Write and Sync.
 	_, err := l.activeFile.Write(data)
@@ -116,7 +146,7 @@ func (l *WAL) Append(key, value []byte) error {
 	l.lastSequenceNum++
 
 	// 2. Encode the record to its binary format.
-	encodedRecord := SerializeV2(lib.TXN_PUT, l.lastSequenceNum, GetPayloadForPut(key, value))
+	encodedRecord := SerializeV2(lib.TXN_PUT, l.lastSequenceNum, 0, GetPayloadForPut(key, value))
 
 	// 3. Write and Sync.
 	_, err := l.activeFile.Write(encodedRecord)
@@ -161,8 +191,9 @@ func recoverNextRecordV2(reader io.Reader) (*LogRecordV2, error) {
 	// Read the header fields.
 	checksum := binary.LittleEndian.Uint32(buf[:checksumSize])
 	sequenceNum := binary.LittleEndian.Uint64(buf[checksumSize : checksumSize+8])
-	recordType := buf[checksumSize+8]
-	payloadSize := binary.LittleEndian.Uint32(buf[checksumSize+9 : newHeaderSize])
+	term := binary.LittleEndian.Uint64(buf[checksumSize+8 : checksumSize+16])
+	recordType := buf[checksumSize+16]
+	payloadSize := binary.LittleEndian.Uint32(buf[checksumSize+17 : newHeaderSize])
 
 	// Read the payload.
 	payloadBuf := make([]byte, payloadSize)
@@ -184,6 +215,7 @@ func recoverNextRecordV2(reader io.Reader) (*LogRecordV2, error) {
 	return &LogRecordV2{
 		CheckSum:    checksum,
 		SequenceNum: sequenceNum,
+		Term:        term,
 		RecordType:  recordType,
 		PayloadSize: payloadSize,
 		Payload:     payloadBuf,
