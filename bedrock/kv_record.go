@@ -132,3 +132,13 @@ func (lr *KVRecord) ComputeChecksumForRecord() uint32 {
 
 	return ComputeChecksum(tempBuf)
 }
+
+// SetChecksum sets the checksum for the log record.
+func (lv *KVRecord) SetChecksum() {
+	lv.CheckSum = lv.ComputeChecksumForRecord()
+}
+
+// GetChecksum returns the checksum for the log record.
+func (lv *KVRecord) GetChecksum() uint32 {
+	return lv.CheckSum
+}

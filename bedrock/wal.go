@@ -35,6 +35,13 @@ type WAL struct {
 	lastSequenceNum uint64
 }
 
+func (l *WAL) Clear() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.lastSequenceNum = 0
+	l.activeFile = nil
+}
+
 // Deprecated.
 //
 // This function exists for the own Raft implementation.

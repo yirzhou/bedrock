@@ -75,34 +75,10 @@ func tryGetCurrentManifest(currentFilePath string) (string, error) {
 	return manifestFilePath, nil
 }
 
-// tryRecoverFromCurrentFile tries to recover the last segment ID from the CURRENT file.
-func tryRecoverFromCurrentFile(currentFilePath string) ([][]SegmentMetadata, uint64, error) {
-	// Check if the CURRENT file exists
-	if _, err := os.Stat(currentFilePath); os.IsNotExist(err) {
-		log.Println("tryRecoverFromCurrentFile: CURRENT file does not exist")
-		// Return an empty levels slice.
-		return emptyLevels(), 0, err
-	}
-	// Read the CURRENT file
-	content, err := os.ReadFile(currentFilePath)
-	if err != nil {
-		log.Println("tryRecoverFromCurrentFile: Error reading CURRENT file:", err)
-		return emptyLevels(), 0, err
-	}
-	// Get the content of the CURRENT file
-	checksumBytes := make([]byte, 4)
-	copy(checksumBytes, content[:4])
-	checksum := binary.LittleEndian.Uint32(checksumBytes)
-	// Compute the checksum of the content
-	computedChecksum := ComputeChecksum(content[4:])
-	// Check if the checksum is correct
-	if checksum != computedChecksum {
-		log.Println("tryRecoverFromCurrentFile: Bad checksum")
-		return emptyLevels(), 0, lib.ErrBadChecksum
-	}
-
-	// Get the manifest file path
-	manifestFilePath := string(content[4:])
+// recoverFromManifest recovers the levels layout from the manifest file.
+// It returns the levels layout and the segment ID.
+func recoverFromManifest(manifestFilePath string) ([][]SegmentMetadata, uint64, error) {
+	// TODO: Implement this.
 	manifestFileName := filepath.Base(manifestFilePath)
 	// Get the segment ID from the manifest file path
 	segmentID, err := GetSegmentIDFromManifestFileName(manifestFileName)
@@ -155,6 +131,37 @@ func tryRecoverFromCurrentFile(currentFilePath string) ([][]SegmentMetadata, uin
 		levels[segmentMetadata.level] = append(levels[segmentMetadata.level], segmentMetadata)
 	}
 	return levels, segmentID, nil
+}
+
+// tryRecoverFromCurrentFile tries to recover the last segment ID from the CURRENT file.
+func tryRecoverFromCurrentFile(currentFilePath string) ([][]SegmentMetadata, uint64, error) {
+	// Check if the CURRENT file exists
+	if _, err := os.Stat(currentFilePath); os.IsNotExist(err) {
+		log.Println("tryRecoverFromCurrentFile: CURRENT file does not exist")
+		// Return an empty levels slice.
+		return emptyLevels(), 0, err
+	}
+	// Read the CURRENT file
+	content, err := os.ReadFile(currentFilePath)
+	if err != nil {
+		log.Println("tryRecoverFromCurrentFile: Error reading CURRENT file:", err)
+		return emptyLevels(), 0, err
+	}
+	// Get the content of the CURRENT file
+	checksumBytes := make([]byte, 4)
+	copy(checksumBytes, content[:4])
+	checksum := binary.LittleEndian.Uint32(checksumBytes)
+	// Compute the checksum of the content
+	computedChecksum := ComputeChecksum(content[4:])
+	// Check if the checksum is correct
+	if checksum != computedChecksum {
+		log.Println("tryRecoverFromCurrentFile: Bad checksum")
+		return emptyLevels(), 0, lib.ErrBadChecksum
+	}
+
+	// Get the manifest file path
+	manifestFilePath := string(content[4:])
+	return recoverFromManifest(manifestFilePath)
 }
 
 // recoverSparseIndexFromSegmentFile recovers the sparse index from the segment file.

@@ -6,17 +6,19 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/hashicorp/raft"
 )
 
 const (
-	OP_PUT                      byte = 0x01
-	OP_DELETE                   byte = 0x02
-	SNAPSHOT_MANIFEST_FILE_TYPE byte = 0x01
-	SNAPSHOT_MEMSTATE_FILE_TYPE byte = 0x02
-	SNAPSHOT_SEGMENT_FILE_TYPE  byte = 0x03
-	SNAPSHOT_INDEX_FILE_TYPE    byte = 0x04
+	OP_PUT                           byte = 0x01
+	OP_DELETE                        byte = 0x02
+	SNAPSHOT_MANIFEST_FILE_TYPE      byte = 0x01
+	SNAPSHOT_MANIFEST_FILE_PATH_TYPE byte = 0x02
+	SNAPSHOT_MEMSTATE_FILE_TYPE      byte = 0x03
+	SNAPSHOT_SEGMENT_FILE_TYPE       byte = 0x04
+	SNAPSHOT_INDEX_FILE_TYPE         byte = 0x05
 )
 
 // fsmSnapshot is our implementation of the raft.FSMSnapshot interface.
@@ -78,13 +80,10 @@ func writeBlock(blockType byte, data []byte, sink raft.SnapshotSink) error {
 // Format: [{KVRecordBytes}]
 func (s *fsmSnapshot) writeMemtableSnapshot(sink raft.SnapshotSink) error {
 	// Create KVRecords.
-	dataBytes := make([]byte, 0)
-	for key, value := range s.kv.memState.state {
-		kvRecord := KVRecord{
-			Key:   []byte(key),
-			Value: value,
-		}
-		dataBytes = append(dataBytes, kvRecord.Serialize()...)
+	dataBytes, err := s.kv.memState.Serialize()
+	if err != nil {
+		log.Println("writeMemtableSnapshot: Error serializing memtable:", err)
+		return err
 	}
 	return writeBlock(byte(SNAPSHOT_MEMSTATE_FILE_TYPE), dataBytes, sink)
 }
@@ -97,13 +96,9 @@ func (s *fsmSnapshot) writeMemtableSnapshot(sink raft.SnapshotSink) error {
 // Content:
 // [{segmentMetadataBytes, sparseIndexBytesSize, sparseIndexBytes, segmentDataBytesSize, segmentDataBytes}]
 func (s *fsmSnapshot) writeManifestSnapshot(manifestFilePath string, sink raft.SnapshotSink) error {
-	// 1. Write the MANIFEST file itself as the first block.
-	// This creates a self-describing format: [BlockType (1B)] [DataLen (4B)] [Data]
-	manifestBytes, err := os.ReadFile(manifestFilePath)
-	if err != nil {
-		return err
-	}
-	if err := writeBlock(byte(SNAPSHOT_MANIFEST_FILE_TYPE), manifestBytes, sink); err != nil {
+	// 1. Stream the manifest file.
+	if err := streamFileToSink(sink, byte(SNAPSHOT_MANIFEST_FILE_TYPE), manifestFilePath); err != nil {
+		log.Println("writeManifest: Error streaming manifest file:", err)
 		return err
 	}
 
@@ -125,7 +120,6 @@ func (s *fsmSnapshot) writeManifestSnapshot(manifestFilePath string, sink raft.S
 			}
 		}
 	}
-
 	return nil
 }
 
@@ -163,16 +157,90 @@ func (s *KVStore) Snapshot() (raft.FSMSnapshot, error) {
 }
 
 func (s *KVStore) Restore(snapshot io.ReadCloser) error {
-	// Acquire the main KVStore write lock.
+	s.lock.Lock()
+	defer s.lock.Unlock()
 
-	// Wipe its current state (clear the memtable, delete all old segment files).
+	log.Println("Restore: Starting to restore from snapshot.")
 
-	// Read the incoming snapshot data (the new MANIFEST and segment files) and write them to its local disk.
+	// 1. Wipe the current state.
+	if err := s.clearAllData(); err != nil {
+		return err
+	}
 
-	// Load the new sparse indexes into memory.
+	manifestFilePath := ""
 
-	// Release the lock.
-	return nil
+	// 2. Read the snapshot stream block by block.
+	for {
+		// Read the block type.
+		typeByte := make([]byte, 1)
+		if _, err := io.ReadFull(snapshot, typeByte); err != nil {
+			if err == io.EOF {
+				log.Println("Restore: Reached end of snapshot.")
+				break // Clean end of snapshot
+			}
+			log.Println("Restore: Error reading block type:", err)
+			return err
+		}
+
+		blockType := typeByte[0]
+
+		if blockType == byte(SNAPSHOT_MEMSTATE_FILE_TYPE) {
+			// This snapshot is just a memtable.
+			lenBuf := make([]byte, 4)
+			if _, err := io.ReadFull(snapshot, lenBuf); err != nil {
+				return err
+			}
+			dataLen := binary.LittleEndian.Uint32(lenBuf)
+			data := make([]byte, dataLen)
+			if _, err := io.ReadFull(snapshot, data); err != nil {
+				return err
+			}
+			return s.memState.Deserialize(data)
+		} else {
+			// This is a file-based snapshot. Read the file path and data.
+			pathLenBuf := make([]byte, 4)
+			if _, err := io.ReadFull(snapshot, pathLenBuf); err != nil {
+				return err
+			}
+			pathLen := binary.LittleEndian.Uint32(pathLenBuf)
+			pathBuf := make([]byte, pathLen)
+			if _, err := io.ReadFull(snapshot, pathBuf); err != nil {
+				return err
+			}
+			filePath := string(pathBuf)
+			if blockType == byte(SNAPSHOT_MANIFEST_FILE_TYPE) {
+				manifestFilePath = filePath
+			}
+			dataLenBuf := make([]byte, 4)
+			if _, err := io.ReadFull(snapshot, dataLenBuf); err != nil {
+				return err
+			}
+			dataLen := binary.LittleEndian.Uint32(dataLenBuf)
+
+			// Create the file and copy the data from the snapshot.
+			if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+				log.Println("Restore: Error creating directory:", err)
+				return err
+			}
+			file, err := os.Create(filePath)
+			if err != nil {
+				return err
+			}
+			if _, err := io.CopyN(file, snapshot, int64(dataLen)); err != nil {
+				file.Close()
+				return err
+			}
+			file.Close()
+		}
+	}
+
+	// 3. After all files are written, load the new state from the manifest.
+	log.Println("Restore: All snapshot files written. Reloading state from new manifest.")
+	if manifestFilePath == "" {
+		log.Panicln("Restore: No manifest file path found in snapshot.")
+	}
+	log.Println("Restore: Manifest file path:", manifestFilePath)
+	return s.recoverFromManifest(manifestFilePath)
 }
 
 // encodePutCommand serializes a Put operation into a byte slice.
@@ -246,6 +314,8 @@ func streamFileToSink(sink raft.SnapshotSink, blockType byte, filePath string) e
 	// Write the header for this file block.
 	headerBuf := new(bytes.Buffer)
 	headerBuf.WriteByte(blockType)
+	binary.Write(headerBuf, binary.LittleEndian, uint32(len(filePath)))
+	headerBuf.WriteString(filePath)
 	binary.Write(headerBuf, binary.LittleEndian, uint32(fileInfo.Size())) // Announce the total size
 	if _, err := sink.Write(headerBuf.Bytes()); err != nil {
 		return err
@@ -255,4 +325,36 @@ func streamFileToSink(sink raft.SnapshotSink, blockType byte, filePath string) e
 	// This avoids loading the whole file into memory.
 	_, err = io.Copy(sink, file)
 	return err
+}
+
+// recoverFromManifest recovers the state from the manifest file.
+func (s *KVStore) recoverFromManifest(manifestFilePath string) error {
+	levels, segmentID, err := recoverFromManifest(manifestFilePath)
+	if err != nil {
+		log.Println("recoverFromManifest: Error recovering from manifest:", err)
+		return err
+	}
+	s.levels = levels
+	s.activeSegmentID = segmentID + 1
+
+	// Recover memstate from levels.
+	err = recoverMemStateFromLevels(filepath.Dir(manifestFilePath), levels, s.memState)
+	if err != nil {
+		log.Println("recoverFromManifest: Error recovering memstate from levels:", err)
+		return err
+	}
+	// Open a new WAL file.
+	walFile, err := os.OpenFile(filepath.Join(s.wal.dir, getWalFileNameFromSegmentID(s.activeSegmentID)), AppendFlags, 0644)
+	if err != nil {
+		log.Println("recoverFromManifest: Error opening WAL file:", err)
+		return err
+	}
+	s.wal = &WAL{
+		dir:             s.wal.dir,
+		activeFile:      walFile,
+		segmentSize:     s.config.GetCheckpointSize(),
+		lastSequenceNum: 0,
+	}
+
+	return nil
 }

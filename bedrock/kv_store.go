@@ -160,6 +160,22 @@ func Open(config *Configuration) (*KVStore, error) {
 	return kv, nil
 }
 
+// clearAllData clears all the data in the KVStore.
+// It is used when restoring from a snapshot.
+//
+// The method assumes that the lock is currently held by the caller.
+func (kv *KVStore) clearAllData() error {
+	// Clear the memstate.
+	kv.memState.ClearState()
+	// Clear all levels.
+	kv.levels = make([][]SegmentMetadata, 0)
+	kv.activeSegmentID = 0
+
+	// Clear all locks.
+	kv.lockManager = NewLockManager()
+	return nil
+}
+
 // BeginTransaction creates a new transaction.
 func (kv *KVStore) BeginTransaction() *Transaction {
 	return NewTransaction(kv)

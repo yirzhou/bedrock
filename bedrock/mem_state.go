@@ -35,10 +35,42 @@ type sparseIndex []sparseIndexEntry
 
 type sparseIndexes map[uint64]sparseIndex
 
-// ClearState clears the memtable.
-// Only clears the memtable, not the sparse index.
+// ClearState clears the memtable and the sparse index.
 func (m *MemState) ClearState() {
 	m.state = make(map[string][]byte)
+	m.sparseIndexMap = make(sparseIndexes)
+}
+
+// Serialize serializes the memtable to a byte slice.
+func (m *MemState) Serialize() ([]byte, error) {
+	dataBytes := make([]byte, 0)
+	for key, value := range m.state {
+		kvRecord := KVRecord{
+			Key:       []byte(key),
+			Value:     value,
+			KeySize:   uint32(len(key)),
+			ValueSize: uint32(len(value)),
+		}
+		kvRecord.SetChecksum()
+		dataBytes = append(dataBytes, kvRecord.Serialize()...)
+	}
+	return dataBytes, nil
+}
+
+// Deserialize deserializes the memtable from the data.
+func (m *MemState) Deserialize(data []byte) error {
+	// Each is a KVRecord.
+	i := 0
+	for i < len(data) {
+		record, err := readKVRecord(data, uint32(i))
+		if err != nil {
+			return err
+		}
+		m.Put(record.Key, record.Value)
+		// Advance the offset.
+		i += record.Size()
+	}
+	return nil
 }
 
 // GetSparseIndex returns the sparse index for a given segment ID.
@@ -256,6 +288,30 @@ func getNextSparseIndexRecord(file *os.File) (*SparseIndexRecord, error) {
 	}
 	// Return the record.
 	return record, nil
+}
+
+// readKVRecord reads a KV record from the data.
+func readKVRecord(data []byte, offset uint32) (KVRecord, error) {
+	// Read checksum first.
+	checksumBytes := data[offset : offset+4]
+	checksum := binary.LittleEndian.Uint32(checksumBytes)
+	// Read key size next.
+	keySizeBytes := data[offset+4 : offset+8]
+	keySize := binary.LittleEndian.Uint32(keySizeBytes)
+	// Read value size next.
+	valueSizeBytes := data[offset+8 : offset+12]
+	valueSize := binary.LittleEndian.Uint32(valueSizeBytes)
+	// Read key + value next.
+	key := data[offset+12 : offset+12+keySize]
+	value := data[offset+12+keySize : offset+12+keySize+valueSize]
+	// Return the record.
+	return KVRecord{
+		CheckSum:  checksum,
+		KeySize:   keySize,
+		ValueSize: valueSize,
+		Key:       key,
+		Value:     value,
+	}, nil
 }
 
 // getNextKVRecord reads the next KV record from the file.
