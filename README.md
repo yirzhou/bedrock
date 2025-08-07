@@ -1,31 +1,95 @@
-# Bedrock: A Durable, Transactional Key-Value Store
+# Bedrock: A Distributed, Transactional Key-Value Store
 
-Bedrock is a persistent, single-node key-value store written in Go. It is built from the ground up to be durable, crash-safe, and to support ACID-like transactions, using principles from foundational database systems like LevelDB/RocksDB and Google's Bigtable.
+> Disclaimer: Bedrock is a hobby project built for educational purposes. While it is designed to be robust and has a growing test suite, it has not been audited or tested for production environments. Please use it in production at your own risk.
 
-The primary goal of this project is to explore and implement the core concepts of modern storage engines.
+Bedrock is a persistent key-value store written in Go, designed to be both a high-performance embedded engine and a fault-tolerant distributed database. It uses a Log-Structured Merge-Tree (LSM-Tree) for its storage engine and the **Raft consensus algorithm** for replication.
+
+The primary goal of this project is to explore and implement the core concepts of modern distributed database systems.
 
 ## Features
 
-### Version 0.2 (Current)
+### Version 0.3 (Current)
 
-The current version of Bedrock is a complete, transactional key-value store with a full data lifecycle management system.
+The current version of Bedrock is a complete, distributed, and transactional key-value store.
 
-- **Multi-Key Transactions:** Bedrock supports atomic multi-key transactions, providing ACID guarantees. Operations are buffered and committed as a single atomic unit, ensuring that a transaction either succeeds completely or has no effect at all. A fine-grained, per-key lock manager provides isolation between concurrent transactions.
+- **Distributed Consensus with Raft:** Bedrock uses the HashiCorp Raft implementation to replicate data across a cluster of nodes. This provides high availability and fault tolerance, ensuring that the database remains operational and data is safe even if some servers in the cluster fail.
 
-- **Durable Writes:** All write operations (`Put`, `Delete`), whether in an explicit transaction or as a single "autocommit" operation, are first recorded in a **Write-Ahead Log (WAL)**. This ensures that no acknowledged write is ever lost.
+- **Multi-Key Transactions:** Bedrock supports atomic multi-key transactions, providing ACID guarantees. A fine-grained, per-key lock manager provides isolation between concurrent transactions.
 
-- **Crash Recovery:** On startup, the system automatically recovers its state. It validates log entries using checksums, detects and truncates corrupted data from unclean shutdowns, and rebuilds its in-memory state to be perfectly consistent with the last successful operation.
+- **Durable Writes:** All write operations are replicated via the Raft log, which is implemented on top of a durable **Write-Ahead Log (WAL)** on each node.
 
-- **Checkpointing & Log Segmentation:** To ensure fast recovery times, the system periodically performs checkpoints. The in-memory store (`memtable`) is flushed to sorted, immutable data files on disk (**Segments/SSTables**). This allows old WAL segments to be safely purged.
+- **Crash Recovery & Snapshotting:** Each node can recover its state quickly from its local WAL. The Raft implementation uses efficient snapshots to allow new or slow followers to catch up to the leader's state without replaying the entire history of the log.
 
-- **Leveled Compaction:** A background process constantly monitors the on-disk data segments. It uses a **Leveled Compaction** strategy to merge segments together, purging old, overwritten, or deleted (tombstoned) data. This reclaims disk space and keeps read performance high over the long term.
+- **Leveled Compaction:** A background process on each node constantly performs **Leveled Compaction** on its local data, reclaiming disk space and keeping read performance high.
 
-- **Fast Reads:** On-disk data segments are indexed with in-memory **sparse indexes**, allowing for fast key lookups without needing to scan entire files.
+- **Fast Reads & Range Scans:** On-disk data is indexed with in-memory **sparse indexes**, and the system supports efficient, sorted range scans via a merging iterator.
 
-## Roadmap
+## Usage Modes
 
-### Version 0.3 (Upcoming)
+Bedrock can be used in two primary modes: as an embedded library or as a distributed server.
 
-The next major milestone is to evolve Bedrock from a single-node database into a fault-tolerant, distributed system.
+### 1. Embedded (Single-Node) Mode
 
-- **Distributed Consensus with Raft:** Integrate the transactional key-value store as a state machine with the **Raft consensus algorithm**. This will replicate the WAL across multiple nodes, providing high availability and ensuring data safety even if some servers in the cluster fail.
+You can use Bedrock directly within your Go application as a durable, transactional, and concurrent key-value store library. All data will be stored in a local directory.
+
+```go
+// --- Using Bedrock as an Embedded Library ---
+
+kvConfig := bedrock.NewDefaultConfiguration() // Or create your own
+db, err := bedrock.Open(kvConfig)
+if err != nil {
+    log.Fatalf("Failed to open Bedrock store: %s", err)
+}
+defer db.Close()
+
+// 2. Perform operations using transactions.
+txn := db.BeginTransaction()
+txn.Put([]byte("hello"), []byte("embedded world"))
+txn.Put([]byte("status"), []byte("ok"))
+if err := txn.Commit(); err != nil {
+    log.Fatalf("Commit failed: %s", err)
+}
+
+// 3. Read the data back.
+readTxn := db.BeginTransaction()
+val, ok := readTxn.Get([]byte("hello"))
+if ok {
+    fmt.Printf("Found value: %s\n", val) // "embedded world"
+}
+readTxn.Rollback() // Read-only transactions can be rolled back.
+```
+
+### 2. Distributed (Cluster) Mode
+
+For high availability, Bedrock can be run as a server process that communicates with other nodes in a cluster. This mode exposes an HTTP API for client interaction.
+
+#### Running the Server
+
+You can start a single-node Bedrock server using the provided `main` function.
+
+```bash
+# From your project's root directory:
+# Assuming that the `main` function lives in that directory
+go run ./cmd/server/
+```
+
+By default, this will start the Raft communication on port `9000` and the client API on port `8080`.
+
+#### Writing Data (`PUT`)
+
+To write or update a key, send a `PUT` request to the `/put` endpoint.
+
+```bash
+# Set the key "name" to the value "raft"
+curl -X PUT -d 'raft' 'http://127.0.0.1:8080/put?key=name'
+```
+
+#### Reading Data (`GET`)
+
+To write or update a key, send a `GET` request to the `/get` endpoint.
+
+```bash
+# Get the value for the key "name"
+# Expected output: raft
+curl 'http://127.0.0.1:8080/get?key=name'
+```

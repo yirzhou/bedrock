@@ -51,7 +51,7 @@ type KVStore struct {
 	shutdownChan chan struct{}
 
 	// The configuration for the KVStore.
-	config *Configuration
+	config *KVStoreConfig
 
 	// Lock manager for transactions.
 	lockManager *LockManager
@@ -104,7 +104,7 @@ func GetSegmentIDFromManifestFileName(fileName string) (uint64, error) {
 // 4. Create and return the KVStore object.
 // TODOs:
 // 1. Add a compaction job that removes old checkpoints and sparse index files.
-func Open(config *Configuration) (*KVStore, error) {
+func Open(config *KVStoreConfig) (*KVStore, error) {
 	// Validate the configuration.
 	if config.EnableMaintenance && config.MaintenanceIntervalMs <= 0 {
 		return nil, errors.New("maintenance interval must be greater than 0")

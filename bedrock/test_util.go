@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func NewConfigurationNoMaintenance() *Configuration {
+func NewConfigurationNoMaintenance() *KVStoreConfig {
 	return NewDefaultConfiguration().WithNoLog().WithMaintenanceIntervalMs(0).WithMemtableSizeThreshold(32).WithEnableMaintenance(false)
 }
 

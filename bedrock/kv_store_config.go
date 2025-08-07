@@ -6,7 +6,8 @@ import (
 	"os"
 )
 
-type Configuration struct {
+// KVStoreConfig is the configuration for the KVStore.
+type KVStoreConfig struct {
 	CheckpointSize             int64
 	BaseDir                    string
 	SegmentFileSizeThresholdLX int64
@@ -19,8 +20,8 @@ type Configuration struct {
 }
 
 // NewDefaultConfiguration returns the default DB configuration.
-func NewDefaultConfiguration() *Configuration {
-	return &Configuration{
+func NewDefaultConfiguration() *KVStoreConfig {
+	return &KVStoreConfig{
 		CheckpointSize:             1024, // 1KiB
 		BaseDir:                    "./db",
 		SegmentFileSizeThresholdLX: 1024,
@@ -33,86 +34,86 @@ func NewDefaultConfiguration() *Configuration {
 	}
 }
 
-func (c *Configuration) WithEnableMaintenance(enable bool) *Configuration {
+func (c *KVStoreConfig) WithEnableMaintenance(enable bool) *KVStoreConfig {
 	c.EnableMaintenance = enable
 	return c
 }
 
-func (c *Configuration) WithEnableCompaction(enable bool) *Configuration {
+func (c *KVStoreConfig) WithEnableCompaction(enable bool) *KVStoreConfig {
 	c.EnableCompaction = enable
 	return c
 }
 
-func (c *Configuration) WithMaintenanceIntervalMs(intervalMs uint64) *Configuration {
+func (c *KVStoreConfig) WithMaintenanceIntervalMs(intervalMs uint64) *KVStoreConfig {
 	c.MaintenanceIntervalMs = intervalMs
 	return c
 }
 
-func (c *Configuration) WithEnableCheckpoint(enable bool) *Configuration {
+func (c *KVStoreConfig) WithEnableCheckpoint(enable bool) *KVStoreConfig {
 	c.EnableCheckpoint = enable
 	return c
 }
 
-func (c *Configuration) WithEnableSyncCheckpoint(enable bool) *Configuration {
+func (c *KVStoreConfig) WithEnableSyncCheckpoint(enable bool) *KVStoreConfig {
 	c.EnableSyncCheckpoint = enable
 	return c
 }
 
-func (c *Configuration) WithLog() *Configuration {
+func (c *KVStoreConfig) WithLog() *KVStoreConfig {
 	log.SetOutput(os.Stdout)
 	return c
 }
 
-func (c *Configuration) WithNoLog() *Configuration {
+func (c *KVStoreConfig) WithNoLog() *KVStoreConfig {
 	log.SetOutput(ioutil.Discard) // Suppress log output
 	return c
 }
 
 // WithBaseDir sets the base directory for the DB.
-func (c *Configuration) WithBaseDir(dir string) *Configuration {
+func (c *KVStoreConfig) WithBaseDir(dir string) *KVStoreConfig {
 	c.BaseDir = dir
 	return c
 }
 
 // GetCompactionIntervalMs returns the compaction interval for the DB.
-func (c *Configuration) GetMaintenanceIntervalMs() uint64 {
+func (c *KVStoreConfig) GetMaintenanceIntervalMs() uint64 {
 	return c.MaintenanceIntervalMs
 }
 
 // WithMemtableSizeThreshold sets the memtable size threshold for the DB.
-func (c *Configuration) WithMemtableSizeThreshold(size int64) *Configuration {
+func (c *KVStoreConfig) WithMemtableSizeThreshold(size int64) *KVStoreConfig {
 	c.MemtableSizeThreshold = size
 	return c
 }
 
 // GetMemtableSizeThreshold returns the memtable size threshold for the DB.
-func (c *Configuration) GetMemtableSizeThreshold() int64 {
+func (c *KVStoreConfig) GetMemtableSizeThreshold() int64 {
 	return c.MemtableSizeThreshold
 }
 
 // WithSegmentFileSizeThresholdLX sets the segment file size threshold for the DB.
-func (c *Configuration) WithSegmentFileSizeThresholdLX(size int64) *Configuration {
+func (c *KVStoreConfig) WithSegmentFileSizeThresholdLX(size int64) *KVStoreConfig {
 	c.SegmentFileSizeThresholdLX = size
 	return c
 }
 
 // WithCheckpointSize sets the checkpoint size for the DB.
-func (c *Configuration) WithCheckpointSize(size int64) *Configuration {
+func (c *KVStoreConfig) WithCheckpointSize(size int64) *KVStoreConfig {
 	c.CheckpointSize = size
 	return c
 }
 
 // GetCheckpointSize returns the checkpoint size for the DB.
-func (c *Configuration) GetCheckpointSize() int64 {
+func (c *KVStoreConfig) GetCheckpointSize() int64 {
 	return c.CheckpointSize
 }
 
 // GetBaseDir returns the base directory for the DB.
-func (c *Configuration) GetBaseDir() string {
+func (c *KVStoreConfig) GetBaseDir() string {
 	return c.BaseDir
 }
 
 // GetSegmentFileSizeThresholdLX returns the segment file size threshold for the DB.
-func (c *Configuration) GetSegmentFileSizeThresholdLX() int64 {
+func (c *KVStoreConfig) GetSegmentFileSizeThresholdLX() int64 {
 	return c.SegmentFileSizeThresholdLX
 }

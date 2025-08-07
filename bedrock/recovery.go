@@ -11,7 +11,7 @@ import (
 )
 
 // PreCreateDirectories creates the directories for the KVStore if they don't exist.
-func PreCreateDirectories(config *Configuration) error {
+func PreCreateDirectories(config *KVStoreConfig) error {
 	// Create the master directory if it doesn't exist.
 	err := os.MkdirAll(config.GetBaseDir(), 0755)
 	if err != nil {

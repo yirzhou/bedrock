@@ -1,41 +1,42 @@
 package main
 
 import (
-	"fmt"
 	"log"
+	"net/http"
 	"os"
-	"strconv"
 	"wal/bedrock"
 )
 
 func main() {
-	args := os.Args[1:]
-	if len(args) < 2 {
-		fmt.Println("Please specify the root directory for WAL and checkpoints.")
-		return
-	}
-	dbDir := args[0]
-	checkpointSize, err := strconv.ParseInt(args[1], 10, 64)
+	// Start a single-node cluster as a HTTP server.
+	// Remember to delete the temp dir after the program exits.
+	// This is a simple example for demonstrating the basic usage of bedrock.
+	tempDir, err := os.MkdirTemp("/tmp", "bedrock-")
 	if err != nil {
-		fmt.Println("Please specify the checkpoint size as an integer.")
-		return
+		log.Fatalf("Failed to create temp dir: %v", err)
 	}
+	config := bedrock.DefaultApplicationConfig(tempDir)
+	peers := []string{config.RaftAddr}
 
-	dbConfig := bedrock.NewDefaultConfiguration().WithBaseDir(dbDir).WithCheckpointSize(checkpointSize)
-	kv, err := bedrock.Open(dbConfig)
+	kv, err := bedrock.Open(bedrock.NewDefaultConfiguration().WithBaseDir(config.GetBaseDir()))
 	if err != nil {
-		log.Println("Error creating KVStore:", err)
-		return
+		log.Fatalf("Failed to open KVStore: %v", err)
 	}
-	defer kv.Close()
-	kv.Print()
 
-	// for i := 0; i < 100; i++ {
-	// 	kv.Put([]byte(fmt.Sprintf("key-%d", i)), []byte(fmt.Sprintf("value-%d", i)))
-	// }
+	raftNode, err := bedrock.StartRaft(kv, config, peers)
+	if err != nil {
+		log.Fatalf("Failed to start Raft node: %v", err)
+	}
 
-	// kv.Put([]byte(""), []byte("value2"))
-	// kv.Put([]byte("color"), []byte(""))
-	// kv.Put([]byte("key-1"), []byte("some utf-8 chars ✨ or binary data \x00\x01\x02"))
+	server := bedrock.NewServer(kv, raftNode)
+	http.HandleFunc("/get", server.HandleGet)
+	http.HandleFunc("/put", server.HandlePut)
+
+	clientAddr := "127.0.0.1:8080"
+	log.Printf("Starting client API server at %s", clientAddr)
+
+	if err := http.ListenAndServe(clientAddr, nil); err != nil {
+		log.Fatalf("Failed to start HTTP server: %v", err)
+	}
 
 }
