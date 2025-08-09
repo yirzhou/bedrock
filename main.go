@@ -4,7 +4,7 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"wal/bedrock"
+	
 )
 
 func main() {
@@ -15,20 +15,20 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create temp dir: %v", err)
 	}
-	config := bedrock.DefaultApplicationConfig(tempDir)
+	config := DefaultApplicationConfig(tempDir)
 	peers := []string{config.RaftAddr}
 
-	kv, err := bedrock.Open(bedrock.NewDefaultConfiguration().WithBaseDir(config.GetBaseDir()))
+	kv, err := Open(NewDefaultConfiguration().WithBaseDir(config.GetBaseDir()))
 	if err != nil {
 		log.Fatalf("Failed to open KVStore: %v", err)
 	}
 
-	raftNode, err := bedrock.StartRaft(kv, config, peers)
+	raftNode, err := StartRaft(kv, config, peers)
 	if err != nil {
 		log.Fatalf("Failed to start Raft node: %v", err)
 	}
 
-	server := bedrock.NewServer(kv, raftNode)
+	server := NewServer(kv, raftNode)
 	http.HandleFunc("/get", server.HandleGet)
 	http.HandleFunc("/put", server.HandlePut)
 
