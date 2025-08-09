@@ -288,6 +288,7 @@ func TestRecoveryNormalWithVariousCheckpointSizes(t *testing.T) {
 			txn.Put([]byte(fmt.Sprintf("key-%d", i)), []byte(fmt.Sprintf("value-%d", i)))
 		}
 		txn.Commit()
+
 		// Close the DB
 		kv.Close()
 

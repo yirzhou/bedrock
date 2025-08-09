@@ -25,25 +25,15 @@ type LogRecordV2 struct {
 	Payload     []byte
 }
 
-func (r *LogRecordV2) GetRecordType() byte {
-	return r.RecordType
-}
 
-func (r *LogRecordV2) GetPayload() []byte {
-	return r.Payload
-}
 
-func (r *LogRecordV2) GetPayloadSize() uint32 {
-	return r.PayloadSize
-}
 
-func (r *LogRecordV2) GetSequenceNum() uint64 {
-	return r.SequenceNum
-}
 
-func (r *LogRecordV2) GetCheckSum() uint32 {
-	return r.CheckSum
-}
+
+
+
+
+
 
 // GetPayloadForPut returns the payload for a single, non-transactional write.
 func GetPayloadForPut(key []byte, value []byte) []byte {

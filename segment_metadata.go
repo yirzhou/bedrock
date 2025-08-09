@@ -39,6 +39,8 @@ func (s *SegmentMetadata) HasOverlappingKeys(other *SegmentMetadata) bool {
 	return true
 }
 
+
+
 // ReadSegmentMetadata reads the segment metadata from the file.
 // The bytes are in the following order:
 // checksum (4 bytes), id (8 bytes), level (4 bytes), minKeySize (4 bytes), maxKeySize (4 bytes), filePathSize (4 bytes), minKey (variable), maxKey (variable), filePath (variable)

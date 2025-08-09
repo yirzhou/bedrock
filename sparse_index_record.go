@@ -13,16 +13,7 @@ type SparseIndexRecord struct {
 	Key       []byte // KeySize bytes
 }
 
-// NewSparseIndexRecord creates a new sparse index record.
-func NewSparseIndexRecord(segmentID uint64, key []byte, offset int64) *SparseIndexRecord {
-	headers := make([]byte, 20)
-	binary.LittleEndian.PutUint64(headers[0:8], segmentID)
-	binary.LittleEndian.PutUint32(headers[8:12], uint32(len(key)))
-	binary.LittleEndian.PutUint64(headers[12:20], uint64(offset))
-	data := append(headers, key...)
-	checksum := ComputeChecksum(data)
-	return &SparseIndexRecord{Checksum: checksum, SegmentID: segmentID, KeySize: uint32(len(key)), Offset: offset, Key: key}
-}
+
 
 func DecodeSparseIndexHeader(headerBytes []byte) (*SparseIndexRecord, error) {
 	if len(headerBytes) < 24 {

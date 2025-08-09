@@ -13,7 +13,7 @@ type segmentIterator struct {
 	index        sparseIndex // The in-memory sparse index for this segment
 	currentKey   []byte
 	currentValue []byte
-	currentErr   error // To store any errors encountered during iteration
+	CurrentErr   error // To store any errors encountered during iteration
 
 }
 
@@ -59,7 +59,7 @@ func (s *segmentIterator) Seek(key []byte) {
 	// If the index is empty or the seek key is smaller than all indexed keys,
 	// idx will be 0, which is correct.
 	if idx >= len(s.index) {
-		s.currentErr = io.EOF
+		s.CurrentErr = io.EOF
 		s.currentKey = nil
 		return
 	}
@@ -70,7 +70,7 @@ func (s *segmentIterator) Seek(key []byte) {
 	// 1. Seek the underlying file handle to the correct starting block.
 	_, err := s.file.Seek(offset, io.SeekStart)
 	if err != nil {
-		s.currentErr = err
+		s.CurrentErr = err
 		s.currentKey = nil
 		return
 	}
@@ -91,9 +91,10 @@ func (s *segmentIterator) Next() {
 	// Decode the next key-value pair from the segment file.
 	record, err := getNextKVRecord(s.file)
 	if err != nil {
-		log.Println("Next: Error decoding next key-value pair:", err)
-		// Invalidate the iterator.
-		s.currentErr = err
+		if err != io.EOF {
+			// Invalidate the iterator only if it's a real error.
+			s.CurrentErr = err
+		}
 		s.currentKey = nil
 		return
 	}
@@ -110,5 +111,5 @@ func (s *segmentIterator) Value() []byte {
 }
 
 func (s *segmentIterator) Valid() bool {
-	return s.currentKey != nil && s.currentErr == nil
+	return s.currentKey != nil
 }

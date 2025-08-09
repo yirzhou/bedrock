@@ -46,7 +46,7 @@ type KVStore struct {
 	// Outer slice index is the level number.
 	// Inner slice holds all the segment files for that level.
 	levels [][]SegmentMetadata
-
+	
 	// A channel to signal the compaction loop to stop.
 	shutdownChan chan struct{}
 
@@ -298,40 +298,7 @@ func (kv *KVStore) getInternalV2(key []byte) ([]byte, bool) {
 	return nil, false
 }
 
-// Deprecated: Use getInternalV2 instead.
-// getInternal is the internal implementation of Get using the old way of going through all sparse indexes from newest to oldest (without leveled compaction).
-func (kv *KVStore) getInternal(key []byte) ([]byte, bool) {
-	// Search in the segment files.
-	segmentIDs, err := kv.memState.GetAllSegmentIDsDescendingOrder()
-	if err != nil {
-		log.Println("Get: Error getting all segment files:", err)
-		return nil, false
-	}
-	log.Println("Get: Searching in segment files:", segmentIDs)
-	var value []byte = nil
-	for _, segmentID := range segmentIDs {
-		offset := kv.memState.FindKeyInSparseIndex(segmentID, key)
-		if offset == -1 {
-			// The segment file does contain the key.
-			continue
-		}
-		segmentFilePath := filepath.Join(kv.config.GetBaseDir(), checkpointDir, getSegmentFileNameFromSegmentId(segmentID))
-		value, err = kv.searchInSegmentFile(segmentFilePath, offset, key)
-		if err != nil {
-			// Technically we shouldn't get an error here.
-			log.Printf("Get: Error searching in segment file: %v\n", err)
-			return nil, false
-		}
-		// This is the value we are looking for since we are searching in the segment files in descending order.
-		if value != nil {
-			log.Println("Get: Found key in segment file:", string(key))
-			if !bytes.Equal(value, lib.TOMBSTONE) {
-				return value, true
-			}
-		}
-	}
-	return nil, false
-}
+
 
 // Get returns the value for a given key. The value is nil if the key is not found.
 // It creates a new transaction and commits it.
@@ -377,18 +344,7 @@ func (kv *KVStore) Put(key, value []byte) error {
 	return nil
 }
 
-// Deprecated: Use Put instead.
-//
-// Warning: Directly calling this method is a blind write.
-// Put writes a key-value pair to the KVStore.
-func (kv *KVStore) PutV1(key, value []byte) error {
-	// Makes sure that the key and value are not nil.
-	if key == nil || value == nil || bytes.Equal(key, lib.CHECKPOINT) || bytes.Equal(value, lib.TOMBSTONE) {
-		log.Printf("Put: Invalid key or value: %s, %s\n", string(key), string(value))
-		return errors.New("invalid key or value")
-	}
-	return kv.putInternal(key, value)
-}
+
 
 // putInternal is the internal implementation of the Put method.
 func (kv *KVStore) putInternal(key, value []byte) error {
@@ -428,22 +384,7 @@ func (kv *KVStore) Delete(key []byte) error {
 	return nil
 }
 
-// DeleteV1 deletes a key-value pair from the KVStore.
-// It writes a tombstone to the WAL and the memtable.
-// TODO: It also updates the offset in the sparse index.
-func (kv *KVStore) DeleteV1(key []byte) error {
-	// Ensures that the key is not CHECKPOINT.
-	if bytes.Equal(key, lib.CHECKPOINT) {
-		log.Printf("Delete: Invalid key: %s\n", string(key))
-		return errors.New("invalid key")
-	}
-	err := kv.putInternal(key, lib.TOMBSTONE)
-	if err != nil {
-		log.Printf("Delete: Error [%v] deleting key [%s]\n", err, string(key))
-		return err
-	}
-	return nil
-}
+
 
 // compareWalFilesAscending compares two WAL file names in ascending order.
 func compareWalFilesAscending(a, b string) int {
@@ -750,21 +691,7 @@ func listWALFiles(dir string) ([]string, error) {
 	return walFiles, nil
 }
 
-// Deprecated
-// listSegmentFiles lists all the segment files in the directory.
-func listSegmentFiles(dir string) ([]string, error) {
-	files, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, err
-	}
-	segmentFiles := make([]string, 0)
-	for _, file := range files {
-		if strings.HasPrefix(file.Name(), segmentFilePrefix) {
-			segmentFiles = append(segmentFiles, file.Name())
-		}
-	}
-	return segmentFiles, nil
-}
+
 
 // getHighestSegmentID returns the highest segment ID from the list of WAL files. If any file is not named correctly, it will be skipped.
 // Note that zero will be returned if no files are found.

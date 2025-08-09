@@ -35,74 +35,17 @@ type WAL struct {
 	lastSequenceNum uint64
 }
 
-func (l *WAL) Clear() {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.lastSequenceNum = 0
-	l.activeFile = nil
-}
 
-// Deprecated.
-//
-// This function exists for the own Raft implementation.
-// GetEntries returns the entries at the given index.
-func (l *WAL) GetEntries(index uint64) []LogRecordV2 {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	return nil
-}
 
-// Deprecated.
-//
-// This function exists for the own Raft implementation.
-// GetTerm returns the term at the given index.
-func (l *WAL) GetTerm(index uint64) uint64 {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	return 0
-}
 
-// Deprecated.
-//
-// This function exists for the own Raft implementation.
-// LastIndex returns the last sequence number we have written to the active segment.
-func (l *WAL) LastIndex() uint64 {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	return l.lastSequenceNum
-}
 
-// Deprecated.
-// prepareRecordData prepares the record data for the log.
-func prepareRecordData(sequenceNum uint64, key, value []byte) []byte {
-	keySize := uint32(len(key))
-	valueSize := uint32(len(value))
-	bytes := make([]byte, headerSize+keySize+valueSize)
-	binary.LittleEndian.PutUint64(bytes[4:12], sequenceNum)
-	binary.LittleEndian.PutUint32(bytes[12:16], keySize)
-	binary.LittleEndian.PutUint32(bytes[16:20], valueSize)
 
-	copy(bytes[headerSize:], key)
-	copy(bytes[headerSize+keySize:], value)
 
-	return bytes
-}
 
-// Deprecated.
-// createLogRecord creates a log record for the given sequence number, key, and value.
-func createLogRecord(sequenceNum uint64, key, value []byte) LogRecord {
-	recordData := prepareRecordData(sequenceNum, key, value)
 
-	return LogRecord{
-		// The checksum contains the entire record except for the first 4 bytes.
-		CheckSum:    ComputeChecksum(recordData[4:]),
-		SequenceNum: sequenceNum,
-		KeySize:     uint32(len(key)),
-		ValueSize:   uint32(len(value)),
-		Key:         key,
-		Value:       value,
-	}
-}
+
+
+
 
 // AppendTransaction appends a transaction record to the log.
 func (l *WAL) AppendTransaction(term uint64, payload []byte) error {
@@ -228,6 +171,8 @@ func recoverNextRecordV2(reader io.Reader) (*LogRecordV2, error) {
 		Payload:     payloadBuf,
 	}, nil
 }
+
+
 
 // recoverNextRecord reads the next record from the WAL file.
 // It returns the record and the sequence number of the next record.
