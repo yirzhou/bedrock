@@ -1,5 +1,7 @@
 # Bedrock: A Distributed, Transactional Key-Value Store
 
+[![codecov](https://codecov.io/gh/yirzhou/bedrock/branch/main/graph/badge.svg)](https://codecov.io/gh/yirzhou/bedrock)
+
 > Disclaimer: Bedrock is a hobby project built for educational purposes. While it is designed to be robust and has a growing test suite, it has not been audited or tested for production environments. Please use it in production at your own risk.
 
 Bedrock is a persistent key-value store written in Go, designed to be both a high-performance embedded engine and a fault-tolerant distributed database. It uses a Log-Structured Merge-Tree (LSM-Tree) for its storage engine and the **Raft consensus algorithm** for replication.
