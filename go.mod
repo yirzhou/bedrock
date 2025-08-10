@@ -1,4 +1,4 @@
-module bedrock
+module github.com/yirzhou/bedrock
 
 go 1.24.4
 

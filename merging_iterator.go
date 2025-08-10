@@ -4,7 +4,8 @@ import (
 	"bytes"
 	"container/heap"
 	"log"
-	"bedrock/lib"
+
+	"github.com/yirzhou/bedrock/lib"
 )
 
 type mergingIterator struct {
@@ -140,41 +141,6 @@ func (m *mergingIterator) Seek(key []byte) {
 	// 3. Prime the iterator by calling Next() to find the first valid key
 	//    at or after the seek position.
 	m.Next()
-}
-
-// Recursive version of Next() that handles tombstones.
-func (m *mergingIterator) NextRecursive() (KVRecord, error) {
-	// Find the next global key
-	pq := m.heap
-	iter := pq.Pop().(*heapItem)
-
-	nextKey := iter.iterator.Key()
-	nextValue := iter.iterator.Value()
-
-	// Advance the iterator.
-	iter.iterator.Next()
-	if iter.iterator.Valid() {
-		pq.Push(iter)
-	}
-
-	// Handle duplicates.
-	for pq.Len() > 0 && bytes.Equal(pq.Peek().(*heapItem).iterator.Key(), nextKey) {
-		iter = pq.Pop().(*heapItem)
-		iter.iterator.Next()
-		if iter.iterator.Valid() {
-			pq.Push(iter)
-		}
-	}
-	// Handle tombstones.
-	if bytes.Equal(nextValue, lib.TOMBSTONE) {
-		// Recursively call Next() to handle tombstones.
-		return m.NextRecursive()
-	}
-
-	m.currentKey = nextKey
-	m.currentValue = nextValue
-
-	return KVRecord{Key: nextKey, Value: nextValue}, nil
 }
 
 // ScanRange scans the range of keys between startKey and endKey.

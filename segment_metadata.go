@@ -5,7 +5,8 @@ import (
 	"encoding/binary"
 	"log"
 	"os"
-	"bedrock/lib"
+
+	"github.com/yirzhou/bedrock/lib"
 )
 
 // SegmentMetadata is the metadata for a segment file.
@@ -38,8 +39,6 @@ func (s *SegmentMetadata) HasOverlappingKeys(other *SegmentMetadata) bool {
 	}
 	return true
 }
-
-
 
 // ReadSegmentMetadata reads the segment metadata from the file.
 // The bytes are in the following order:

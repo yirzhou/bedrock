@@ -2,19 +2,18 @@ package main
 
 import (
 	"bytes"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-	"bedrock/lib"
+
+	"github.com/yirzhou/bedrock/lib"
 )
 
 const (
@@ -46,7 +45,7 @@ type KVStore struct {
 	// Outer slice index is the level number.
 	// Inner slice holds all the segment files for that level.
 	levels [][]SegmentMetadata
-	
+
 	// A channel to signal the compaction loop to stop.
 	shutdownChan chan struct{}
 
@@ -102,8 +101,6 @@ func GetSegmentIDFromManifestFileName(fileName string) (uint64, error) {
 // - Truncate the WAL file (likely the last one) to the last good offset.
 //
 // 4. Create and return the KVStore object.
-// TODOs:
-// 1. Add a compaction job that removes old checkpoints and sparse index files.
 func Open(config *KVStoreConfig) (*KVStore, error) {
 	// Validate the configuration.
 	if config.EnableMaintenance && config.MaintenanceIntervalMs <= 0 {
@@ -298,8 +295,6 @@ func (kv *KVStore) getInternalV2(key []byte) ([]byte, bool) {
 	return nil, false
 }
 
-
-
 // Get returns the value for a given key. The value is nil if the key is not found.
 // It creates a new transaction and commits it.
 // It is a wrapper around Transaction.Get.
@@ -344,8 +339,6 @@ func (kv *KVStore) Put(key, value []byte) error {
 	return nil
 }
 
-
-
 // putInternal is the internal implementation of the Put method.
 func (kv *KVStore) putInternal(key, value []byte) error {
 	kv.lock.Lock()
@@ -383,8 +376,6 @@ func (kv *KVStore) Delete(key []byte) error {
 	txn.Commit()
 	return nil
 }
-
-
 
 // compareWalFilesAscending compares two WAL file names in ascending order.
 func compareWalFilesAscending(a, b string) int {
@@ -514,16 +505,6 @@ func GetSegmentIDFromSegmentFilePath(filePath string) (uint64, error) {
 	return segmentIdInt, nil
 }
 
-// getSegmentIDFromSegmentFileName returns the segment ID from a segment file name.
-func getSegmentIDFromSegmentFileName(fileName string) (uint64, error) {
-	segmentId := strings.TrimPrefix(fileName, segmentFilePrefix)
-	segmentIdInt, err := strconv.ParseUint(segmentId, 10, 64)
-	if err != nil {
-		return 0, err
-	}
-	return segmentIdInt, nil
-}
-
 // getSegmentFileNameFromSegmentId constructs the filename for a segment file from a segment ID.
 func getSegmentFileNameFromSegmentId(segmentId uint64) string {
 	return fmt.Sprintf("%s%06d", segmentFilePrefix, segmentId)
@@ -534,137 +515,7 @@ func getSparseIndexFileNameFromSegmentId(segmentId uint64) string {
 	return fmt.Sprintf("%s%06d", sparseIndexFilePrefix, segmentId)
 }
 
-// tryGetLastCheckpoint tries to get the last checkpoint file path from the checkpoint file and the WAL files.
-func tryGetLastCheckpoint(checkpointDir, walDir string) string {
-	// Create the checkpoint directory if it doesn't exist.
-	err := os.MkdirAll(checkpointDir, 0755)
-	if err != nil {
-		log.Println("Error creating checkpoint directory:", err)
-		return ""
-	}
-
-	// Create the WAL directory if it doesn't exist.
-	err = os.MkdirAll(walDir, 0755)
-	if err != nil {
-		log.Println("Error creating WAL directory:", err)
-		return ""
-	}
-
-	checkpointFilePath, _ := tryGetLastCheckpointFromFile(checkpointDir)
-	if checkpointFilePath != "" {
-		return checkpointFilePath
-	}
-	checkpointFilePath, _ = tryGetLastCheckpointFromWalFiles(walDir)
-	if checkpointFilePath != "" {
-		return checkpointFilePath
-	}
-	return ""
-}
-
-// tryGetLastCheckpoint tries to get the last checkpoint file path.
-// If the file does not exist, it returns an empty string and no error.
-func tryGetLastCheckpointFromFile(checkpointDir string) (string, error) {
-	checkpointFilePath := filepath.Join(checkpointDir, checkpointFile)
-	// Creates the file if it doesn't exist.
-	checkpointFile, err := os.OpenFile(checkpointFilePath, os.O_RDONLY, 0644)
-	if err != nil {
-		log.Println("Error opening checkpoint file:", err)
-		if os.IsNotExist(err) {
-			return "", nil
-		}
-		return "", err
-	}
-	defer checkpointFile.Close()
-
-	// Read the file.
-	bytes, err := io.ReadAll(checkpointFile)
-	if err != nil {
-		log.Println("Error reading checkpoint file:", err)
-		return "", err
-	}
-	// Check the bytes length.
-	if len(bytes) < 4 {
-		log.Println("Checkpoint file is too short")
-		return "", lib.ErrCheckpointCorrupted
-	}
-
-	// Verify the checksum of the file.
-	checksum := binary.LittleEndian.Uint32(bytes[:4])
-	if checksum != ComputeChecksum(bytes[4:]) {
-		log.Println("Checksum mismatch in checkpoint file")
-		return "", lib.ErrBadChecksum
-	}
-	// Return the segment file path.
-	return string(bytes[4:]), nil
-}
-
-// getLastCheckpointFilePathFromWalFile tries to get the last checkpoint file path from a WAL file.
-// If the WAL file does not contain a CHECKPOINT record, it returns an empty string and no error.
-func getLastCheckpointFilePathFromWalFile(walFilePath string) (string, error) {
-	walFile, err := os.Open(walFilePath)
-	if err != nil {
-		return "", err
-	}
-	defer walFile.Close()
-	// Read the file from the beginning.
-	_, err = walFile.Seek(0, io.SeekStart)
-	if err != nil {
-		log.Println("Error seeking to start:", err)
-		return "", err
-	}
-	lastCheckpointFilePath := ""
-	for {
-		_, err := walFile.Seek(0, io.SeekCurrent)
-		if err != nil {
-			log.Println("Error seeking to current position:", err)
-			break
-		}
-		// Read the first record.
-		record, err := recoverNextRecord(walFile)
-		if err != nil && err != io.EOF {
-			log.Println("Error recovering next record:", err)
-			break
-		}
-
-		if record == nil {
-			// EOF
-			break
-		}
-		// Return the segment file path. If the record is not a CHECKPOINT record, return an empty string.
-		if string(record.Key) == string(lib.CHECKPOINT) {
-			log.Println("Found CHECKPOINT record in WAL file:", walFilePath)
-			lastCheckpointFilePath = string(record.Value)
-			// Keep updating the last checkpoint file.
-		}
-	}
-	return lastCheckpointFilePath, nil
-}
-
-// tryGetLastCheckpointFromWalFiles tries to get the last checkpoint file path from the WAL files.
-func tryGetLastCheckpointFromWalFiles(walDir string) (string, error) {
-	walFiles, err := listWALFiles(walDir)
-	if err != nil {
-		log.Println("tryGetLastCheckpointFromWalFiles: Error listing WAL files:", err)
-		return "", err
-	}
-	// Sort all files by segment ID in reverse order.
-	slices.SortFunc(walFiles, compareWalFilesAscending)
-	slices.Reverse(walFiles)
-	// Get the last checkpoint file path from the WAL files (reverse order).
-	for _, walFile := range walFiles {
-		walPath := filepath.Join(walDir, walFile)
-		walPath, err := getLastCheckpointFilePathFromWalFile(walPath)
-		if err != nil {
-			log.Println("tryGetLastCheckpointFromWalFiles: Error getting last checkpoint file path from WAL file:", err)
-			// Skip this file.
-		} else if walPath != "" {
-			return walPath, nil
-		}
-	}
-	return "", nil
-}
-
-// getNewSegmentFilePath returns the path to the next segment file.
+// getSegmentFilePath returns the path to the next segment file.
 func (kv *KVStore) getSegmentFilePath(segmentID uint64) string {
 	segmentFileName := getSegmentFileNameFromSegmentId(segmentID)
 	return filepath.Join(kv.config.GetBaseDir(), checkpointDir, segmentFileName)
@@ -689,25 +540,6 @@ func listWALFiles(dir string) ([]string, error) {
 		}
 	}
 	return walFiles, nil
-}
-
-
-
-// getHighestSegmentID returns the highest segment ID from the list of WAL files. If any file is not named correctly, it will be skipped.
-// Note that zero will be returned if no files are found.
-func getHighestSegmentID(files []string) uint64 {
-	highestId := uint64(0)
-	for _, file := range files {
-		segmentId := strings.TrimPrefix(file, "wal-")
-		segmentIdInt, err := strconv.ParseUint(segmentId, 10, 64)
-		if err != nil {
-			log.Println("Error parsing segment ID:", err)
-			// Skip this file.
-		} else {
-			highestId = max(highestId, segmentIdInt)
-		}
-	}
-	return highestId
 }
 
 // getWalFileNameFromSegmentID constructs the filename for a WAL file from a segment ID.

@@ -7,7 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"bedrock/lib"
+
+	"github.com/yirzhou/bedrock/lib"
 )
 
 // PreCreateDirectories creates the directories for the KVStore if they don't exist.
@@ -404,80 +405,4 @@ func recoverFromWALFile(reader *os.File, memState *MemState, isLastWal bool) (ui
 		}
 	}
 	return lastSequenceNum, nil
-}
-
-// tryRecoverSparseIndex tries to recover the sparse index from the checkpoint file. Returns the last segment ID.
-func tryRecoverSparseIndex(dir string, memState *MemState) (uint64, error) {
-	// Read the checkpoint if exists.
-	lastCheckpointFilePath := tryGetLastCheckpoint(filepath.Join(dir, checkpointDir), filepath.Join(dir, logsDir))
-	lastSegmentID := uint64(0)
-
-	if lastCheckpointFilePath != "" {
-		log.Println("tryRecoverSparseIndex: Last checkpoint found:", lastCheckpointFilePath)
-		checkpointFileName := filepath.Base(lastCheckpointFilePath)
-		segmentID, err := getSegmentIDFromSegmentFileName(checkpointFileName)
-		if err != nil {
-			log.Println("tryRecoverSparseIndex: Error getting segment ID from last checkpoint file:", err)
-			return 0, lib.ErrCheckpointCorrupted
-		}
-		lastSegmentID = segmentID
-		log.Println("tryRecoverSparseIndex: Last segment ID:", lastSegmentID)
-
-		// Recover sparse index from sparse index file.
-		sparseIndexFilePath := filepath.Join(dir, checkpointDir, getSparseIndexFileNameFromSegmentId(segmentID))
-		offset, err := recoverFromSparseIndexFile(sparseIndexFilePath, memState)
-		if err != nil {
-			log.Println("tryRecoverSparseIndex: Error recovering from sparse index file:", err)
-			if err == lib.ErrSparseIndexCorrupted {
-				// Truncate the sparse index file to the last good offset.
-				os.Truncate(sparseIndexFilePath, offset)
-			}
-			return lastSegmentID, err
-		}
-	}
-	return lastSegmentID, nil
-}
-
-// Deprecated: Use recoverFromSparseIndexFileFromLevels instead.
-// recoverFromSparseIndexFile recovers the sparse index from the sparse index file.
-// It returns the last good offset and an error.
-func recoverFromSparseIndexFile(filePath string, memState *MemState) (int64, error) {
-	segmentID, err := GetSegmentIDFromIndexFilePath(filePath)
-	if err != nil {
-		log.Println("recoverFromSparseIndexFile: Error getting segment ID from index file:", err)
-		return 0, err
-	}
-	sparseIndexFile, err := os.OpenFile(filePath, os.O_RDONLY, 0644)
-	if err != nil {
-		log.Println("recoverFromSparseIndexFile: Error opening sparse index file:", err)
-		return 0, err
-	}
-	defer sparseIndexFile.Close()
-	var offset int64 = 0
-	sparseIndexFile.Seek(0, io.SeekStart)
-	for {
-		offset, err = sparseIndexFile.Seek(0, io.SeekCurrent)
-		if err != nil {
-			log.Println("recoverFromSparseIndexFile: Error seeking:", err)
-			return 0, err
-		}
-		record, err := getNextSparseIndexRecord(sparseIndexFile)
-		if err != nil {
-			if err == io.EOF {
-				log.Println("recoverFromSparseIndexFile: End of file reached")
-				break
-			}
-			log.Println("recoverFromSparseIndexFile: Error getting next sparse index record:", err)
-			// Return a special error to indicate that the checkpoint file is corrupted.
-			return offset, lib.ErrSparseIndexCorrupted
-		}
-		if record == nil {
-			log.Println("recoverFromSparseIndexFile: End of file reached")
-			break
-		}
-		log.Printf("recoverFromSparseIndexFile: Adding sparse index entry: %s, %d\n", string(record.Key), record.Offset)
-		// Add the entry to the sparse index in memory.
-		memState.AddSparseIndexEntry(segmentID, record.Key, record.Offset)
-	}
-	return offset, nil
 }

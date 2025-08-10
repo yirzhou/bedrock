@@ -9,7 +9,8 @@ import (
 	"os"
 	"slices"
 	"strings"
-	"bedrock/lib"
+
+	"github.com/yirzhou/bedrock/lib"
 )
 
 // MemState is a simple in-memory key-value store. It doesn't have any concurrency protection.

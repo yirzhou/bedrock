@@ -4,7 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"log"
-	"bedrock/lib"
+
+	"github.com/yirzhou/bedrock/lib"
 )
 
 // Transaction allows multiple operations to be performed atomically.

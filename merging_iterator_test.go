@@ -2,7 +2,8 @@ package main
 
 import (
 	"testing"
-	"bedrock/lib"
+
+	"github.com/yirzhou/bedrock/lib"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -179,5 +180,52 @@ func TestMergingIterator_ScanRange(t *testing.T) {
 	for i := range count - 1 {
 		assert.Equal(t, []byte(string(rune('a'+i))), records[i].Key)
 		assert.Equal(t, []byte(string(rune('a'+i))), records[i].Value)
+	}
+}
+
+// MockIterator is a mock implementation of the Iterator interface for testing.
+type MockIterator struct {
+	keys   [][]byte
+	values [][]byte
+	index  int
+	valid  bool
+}
+
+func (m *MockIterator) Next() {
+	m.index++
+	m.valid = m.index < len(m.keys)
+}
+
+func (m *MockIterator) Key() []byte {
+	if m.valid {
+		return m.keys[m.index]
+	}
+	return nil
+}
+
+func (m *MockIterator) Value() []byte {
+	if m.valid {
+		return m.values[m.index]
+	}
+	return nil
+}
+
+func (m *MockIterator) Valid() bool {
+	return m.valid
+}
+
+func (m *MockIterator) Seek(key []byte) {
+	// For simplicity, this mock just resets the iterator to the beginning
+	// and relies on Next() to advance. A real mock would implement proper seeking.
+	m.index = -1
+	m.Next()
+}
+
+func NewMockIterator(keys [][]byte, values [][]byte) *MockIterator {
+	return &MockIterator{
+		keys:   keys,
+		values: values,
+		index:  -1, // Position before the first element
+		valid:  false,
 	}
 }

@@ -4,7 +4,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
-	"bedrock/lib"
+
+	"github.com/yirzhou/bedrock/lib"
 )
 
 // The new log record format in which the header is 25 bytes: 4 + 8 + 8 + 1 + 4 = 25
@@ -24,16 +25,6 @@ type LogRecordV2 struct {
 	PayloadSize uint32
 	Payload     []byte
 }
-
-
-
-
-
-
-
-
-
-
 
 // GetPayloadForPut returns the payload for a single, non-transactional write.
 func GetPayloadForPut(key []byte, value []byte) []byte {

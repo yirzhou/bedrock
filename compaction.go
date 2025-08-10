@@ -8,7 +8,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"bedrock/lib"
+
+	"github.com/yirzhou/bedrock/lib"
 )
 
 // CompactionPlan is the plan for the compaction.

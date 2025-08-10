@@ -6,7 +6,8 @@ import (
 	"log"
 	"os"
 	"sync"
-	"bedrock/lib"
+
+	"github.com/yirzhou/bedrock/lib"
 )
 
 const (
@@ -34,18 +35,6 @@ type WAL struct {
 	// The last sequence number we have written to the active segment.
 	lastSequenceNum uint64
 }
-
-
-
-
-
-
-
-
-
-
-
-
 
 // AppendTransaction appends a transaction record to the log.
 func (l *WAL) AppendTransaction(term uint64, payload []byte) error {
@@ -169,63 +158,6 @@ func recoverNextRecordV2(reader io.Reader) (*LogRecordV2, error) {
 		RecordType:  recordType,
 		PayloadSize: payloadSize,
 		Payload:     payloadBuf,
-	}, nil
-}
-
-
-
-// recoverNextRecord reads the next record from the WAL file.
-// It returns the record and the sequence number of the next record.
-// It returns an error if the checksum is invalid.
-// It returns an error if the record is not found.
-// It returns an error if the file is not found.
-// It returns an error if the file is not readable.
-// It returns an error if the file is not seekable.
-func recoverNextRecord(reader io.Reader) (*LogRecord, error) {
-	buf := make([]byte, headerSize)
-
-	_, err := io.ReadFull(reader, buf)
-	if err != nil {
-		// EOF is handled
-		if err != io.EOF {
-			log.Println("Error reading next WAL record:", err)
-		}
-		return nil, err
-	}
-
-	// Read the header fields.
-	checksum := binary.LittleEndian.Uint32(buf[:checksumSize])
-	sequenceNum := binary.LittleEndian.Uint64(buf[checksumSize:headerSize])
-	keySize := binary.LittleEndian.Uint32(buf[checksumSize+8 : headerSize])
-	valueSize := binary.LittleEndian.Uint32(buf[checksumSize+12 : headerSize])
-
-	// Assuming a 64-bit system, the sum of keySize and valueSize is always positive.
-	keyValueSize := int(keySize) + int(valueSize)
-	payloadBuf := make([]byte, keyValueSize)
-	_, err = io.ReadFull(reader, payloadBuf)
-	if err != nil {
-		if err != io.EOF {
-			log.Println("Error reading next WAL record:", err)
-		}
-		return nil, err
-	}
-
-	// Compute checksum of entire record.
-	dataToVerify := append(buf[checksumSize:], payloadBuf...)
-	computedChecksum := ComputeChecksum(dataToVerify)
-	if computedChecksum != checksum {
-		// Bad checksum.
-		log.Println("Error reading next WAL record: checksum mismatch")
-		return nil, lib.ErrBadChecksum
-	}
-
-	return &LogRecord{
-		CheckSum:    checksum,
-		SequenceNum: sequenceNum,
-		KeySize:     keySize,
-		ValueSize:   valueSize,
-		Key:         payloadBuf[:keySize],
-		Value:       payloadBuf[keySize:],
 	}, nil
 }
 
