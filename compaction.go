@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bedrock/lib"
 	"bytes"
 	"container/heap"
 	"fmt"
@@ -8,7 +9,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"bedrock/lib"
 )
 
 // CompactionPlan is the plan for the compaction.
