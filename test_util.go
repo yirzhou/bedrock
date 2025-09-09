@@ -1,4 +1,4 @@
-package main
+package bedrock
 
 import (
 	"math/rand"

@@ -1,4 +1,4 @@
-package main
+package bedrock
 
 // Iterator provides a way to seek and scan over key-value pairs.
 type Iterator interface {
