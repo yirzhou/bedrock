@@ -76,13 +76,35 @@ func (txn *Transaction) Get(key []byte) ([]byte, bool) {
 	}
 
 	// 2. If not found, check the store.
-	// First, acquire a read lock on the key.
-	// 2. Check if we already hold a lock for this key.
+	// Check if we already hold a lock for this key.
 	// A write lock also grants read permission.
 	if !txn.readLocks[stringKey] && !txn.writeLocks[stringKey] {
-		// 3. If not, acquire a read lock from the manager.
+		// If not, acquire a read lock from the manager.
 		txn.store.lockManager.AcquireReadLock(key)
 		txn.readLocks[stringKey] = true // Remember we hold this lock.
+	}
+	return txn.store.get(key)
+}
+
+// GetForUpdate gets a value from the KVStore and acquires a write lock.
+// This should be used when you plan to update the key later in the same transaction.
+// It prevents the deadlock that occurs when Get() acquires a read lock and Put() tries to acquire a write lock.
+func (txn *Transaction) GetForUpdate(key []byte) ([]byte, bool) {
+	stringKey := string(key)
+	// 1. Check its private buffer first.
+	if value, ok := txn.writes[stringKey]; ok {
+		if bytes.Equal(value, lib.TOMBSTONE) {
+			return nil, false
+		}
+		return value, true
+	}
+
+	// 2. If not found, check the store.
+	// Acquire a write lock on the key if not already acquired.
+	// This prevents the deadlock that occurs with read->write lock upgrade.
+	if !txn.writeLocks[stringKey] {
+		txn.store.lockManager.AcquireWriteLock(key)
+		txn.writeLocks[stringKey] = true
 	}
 	return txn.store.get(key)
 }
@@ -121,7 +143,7 @@ func (txn *Transaction) Commit() error {
 	txn.store.lock.Lock()
 	defer txn.store.lock.Unlock()
 
-	// 3. Create the commit record (for all writes)
+	// 4. Create the commit record (for all writes)
 	commitRecord := txn.createCommitRecord()
 
 	// 4. Write to WAL and fsync.
@@ -172,7 +194,10 @@ func (txn *Transaction) Commit() error {
 
 // releaseLocks releases the read and write locks.
 func (txn *Transaction) releaseLocks() {
+	// Only release locks that we actually acquired.
+	// For read locks, we don't acquire them anymore, so this is safe.
 	txn.store.lockManager.ReleaseReadLocks(txn.getReadLocks())
+	// For write locks, we only acquire them during commit, so release them.
 	txn.store.lockManager.ReleaseWriteLocks(txn.getWriteLocks())
 	// Clear the read and write locks.
 	txn.readLocks = make(map[string]bool)
